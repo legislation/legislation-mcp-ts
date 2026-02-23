@@ -665,3 +665,146 @@ test('EU Division renders as numbered paragraph', () => {
   assert.ok(result.includes('(1) The protection of natural persons is a fundamental right.'), 'Should format division with number');
   assert.ok(result.includes('(2) The principles should respect fundamental freedoms.'), 'Should format second division');
 });
+
+// --- Fragment-aware parsing tests ---
+
+test('fragment: parses only the target section, skipping ancestor headings', () => {
+  const xml = `
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+                 xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <ukm:Metadata>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/1</dc:identifier>
+      </ukm:Metadata>
+      <Primary>
+        <Body>
+          <Part id="part-1">
+            <Number>Part 1</Number>
+            <Title>Introduction</Title>
+            <P1group id="section-1">
+              <Title>Overview</Title>
+              <P1>
+                <Pnumber>1</Pnumber>
+                <P1para>
+                  <Text>This Act makes provision about examples.</Text>
+                </P1para>
+              </P1>
+            </P1group>
+          </Part>
+        </Body>
+      </Primary>
+    </Legislation>`;
+
+  const parser = new CLMLTextParser();
+  const result = parser.parse(xml);
+
+  assert.ok(result.includes('Section 1) **Overview**'), 'Should include target section heading');
+  assert.ok(result.includes('This Act makes provision about examples.'), 'Should include section text');
+  assert.ok(!result.includes('## Part 1'), 'Should NOT include ancestor Part heading');
+  assert.ok(!result.includes('## Introduction'), 'Should NOT include ancestor Part title');
+});
+
+test('fragment: full document with no fragment parses from root', () => {
+  const xml = `
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+                 xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <ukm:Metadata>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1</dc:identifier>
+      </ukm:Metadata>
+      <Primary>
+        <Body>
+          <Part id="part-1">
+            <Number>Part 1</Number>
+            <Title>Introduction</Title>
+            <P1group id="section-1">
+              <Title>Overview</Title>
+              <P1>
+                <Pnumber>1</Pnumber>
+                <P1para>
+                  <Text>This Act makes provision about examples.</Text>
+                </P1para>
+              </P1>
+            </P1group>
+          </Part>
+        </Body>
+      </Primary>
+    </Legislation>`;
+
+  const parser = new CLMLTextParser();
+  const result = parser.parse(xml);
+
+  assert.ok(result.includes('## Part 1'), 'Should include Part heading for full document');
+  assert.ok(result.includes('## Introduction'), 'Should include Part title for full document');
+  assert.ok(result.includes('Section 1) **Overview**'), 'Should include section');
+});
+
+test('fragment: uses first dc:identifier when multiple exist', () => {
+  const xml = `
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+                 xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <ukm:Metadata>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/2</dc:identifier>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1</dc:identifier>
+      </ukm:Metadata>
+      <Primary>
+        <Body>
+          <Part id="part-1">
+            <Number>Part 1</Number>
+            <Title>Introduction</Title>
+            <P1group id="section-2">
+              <Title>Definitions</Title>
+              <P1>
+                <Pnumber>2</Pnumber>
+                <P1para>
+                  <Text>In this Act, the following terms apply.</Text>
+                </P1para>
+              </P1>
+            </P1group>
+          </Part>
+        </Body>
+      </Primary>
+    </Legislation>`;
+
+  const parser = new CLMLTextParser();
+  const result = parser.parse(xml);
+
+  assert.ok(result.includes('Section 2) **Definitions**'), 'Should use first dc:identifier (section/2)');
+  assert.ok(!result.includes('## Part 1'), 'Should NOT include ancestor Part heading');
+});
+
+test('fragment: falls back to root when target ID not found', () => {
+  const xml = `
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+                 xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <ukm:Metadata>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/99</dc:identifier>
+      </ukm:Metadata>
+      <Primary>
+        <Body>
+          <Part id="part-1">
+            <Number>Part 1</Number>
+            <Title>Introduction</Title>
+            <P1group id="section-1">
+              <Title>Overview</Title>
+              <P1>
+                <Pnumber>1</Pnumber>
+                <P1para>
+                  <Text>This Act makes provision about examples.</Text>
+                </P1para>
+              </P1>
+            </P1group>
+          </Part>
+        </Body>
+      </Primary>
+    </Legislation>`;
+
+  const parser = new CLMLTextParser();
+  const result = parser.parse(xml);
+
+  // Should gracefully fall back to parsing the full document
+  assert.ok(result.includes('## Part 1'), 'Should include Part heading (fallback to root)');
+  assert.ok(result.includes('Section 1) **Overview**'), 'Should include section content');
+});

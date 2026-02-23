@@ -6,6 +6,7 @@
  */
 
 import { DOMParser } from '@xmldom/xmldom';
+import { parseLegislationUri } from '../utils/legislation-uri.js';
 
 const SKIP = Symbol('skip');
 type ParseResult = string | typeof SKIP | null;
@@ -19,9 +20,9 @@ export class CLMLTextParser {
    */
   parse(xml: string): string {
     const doc = new DOMParser().parseFromString(xml, 'text/xml');
-    const root = doc.documentElement;
     this.skipNextPnumber = false;
-    return this.parseElement(root, 0).trim();
+    const startNode = this.findFragmentTarget(doc) ?? doc.documentElement;
+    return this.parseElement(startNode, 0).trim();
   }
 
   private parseElement(node: Element, indentLevel: number, recurseOnly = false): string {
@@ -408,6 +409,44 @@ export class CLMLTextParser {
     const indent = '\t'.repeat(indentLevel + 1);
     const content = this.parseElement(element, indentLevel + 1, true);
     return `\n${indent}- ${content.trim()}`;
+  }
+
+  // --- Fragment detection ---
+
+  /**
+   * If the document metadata contains a dc:identifier with a fragment path,
+   * find and return the target element by its id attribute.
+   * Returns null for full documents or when the target isn't found.
+   */
+  private findFragmentTarget(doc: Document): Element | null {
+    // Find first dc:identifier element anywhere in the document
+    const identifiers = doc.getElementsByTagName('dc:identifier');
+    if (identifiers.length === 0) return null;
+
+    const uri = (identifiers[0].textContent || '').trim();
+    if (!uri) return null;
+
+    const parsed = parseLegislationUri(uri);
+    if (!parsed?.fragment) return null;
+
+    // Convert fragment from slash form (section/1) to dash form (section-1)
+    const targetId = parsed.fragment.replace(/\//g, '-');
+
+    return this.findElementById(doc.documentElement, targetId);
+  }
+
+  /** Recursively search the DOM for an element with the given id attribute. */
+  private findElementById(node: Element, id: string): Element | null {
+    if (node.getAttribute('id') === id) return node;
+
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i];
+      if (child.nodeType === 1) {
+        const found = this.findElementById(child as Element, id);
+        if (found) return found;
+      }
+    }
+    return null;
   }
 
   // --- Helpers ---
