@@ -1,465 +1,746 @@
 /**
- * Converts CLML (Crown Legislation Markup Language) XML to readable plain text.
+ * Parses CLML (Crown Legislation Markup Language) XML into a semantic Document tree.
  *
- * Ported from the Python CLMLMarkdownParser used for the vector database,
- * with extensions for Parts, Chapters, prelims, cross-headings, and schedules.
+ * Pure functions — no class, no mutable state. The Document tree is then
+ * serialized to plain text by clml-text-serializer.ts.
  */
 
 import { DOMParser } from '@xmldom/xmldom';
 import { parseLegislationUri } from '../utils/legislation-uri.js';
+import type {
+  Document, Division, DivisionName, Provision, SubProvision,
+  Paragraph, Schedule, Block, Text, Table, Figure, BlockAmendment,
+  List, Footnote, NumberedParagraph,
+} from './clml-types.js';
 
-const SKIP = Symbol('skip');
-type ParseResult = string | typeof SKIP | null;
+// --- Public API ---
 
-export class CLMLTextParser {
-  private skipNextPnumber = false;
+export function parse(xml: string): Document {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  const startNode = findFragmentTarget(doc) ?? doc.documentElement;
+  return parseDocument(startNode);
+}
 
-  /**
-   * Parse CLML XML into plain text.
-   * Accepts a full document or a fragment (e.g. a single Part or Section).
-   */
-  parse(xml: string): string {
-    const doc = new DOMParser().parseFromString(xml, 'text/xml');
-    this.skipNextPnumber = false;
-    const startNode = this.findFragmentTarget(doc) ?? doc.documentElement;
-    return this.parseElement(startNode, 0).trim();
+// --- Top-level dispatch ---
+
+function parseDocument(root: Element): Document {
+  // If the root IS a structural element (fragment), parse it directly
+  const structural = parseDivisionOrProvision(root);
+  if (structural) {
+    return { type: 'document', prelims: [], body: [structural], schedules: [] };
   }
 
-  private parseElement(node: Element, indentLevel: number, recurseOnly = false): string {
-    if (!recurseOnly) {
-      const result = this.parseKnownTag(node, indentLevel);
-      if (result !== null && result !== SKIP) return result;
+  // Standalone P2 fragment — treat as a provision
+  const pMatch = root.localName.match(/^P(\d+)$/);
+  if (pMatch) {
+    const level = parseInt(pMatch[1], 10);
+    if (level >= 2) {
+      return { type: 'document', prelims: [], body: [parseProvisionAtAnyLevel(root, level)], schedules: [] };
     }
-
-    let result = '';
-
-    for (let i = 0; i < node.childNodes.length; i++) {
-      const child = node.childNodes[i];
-
-      if (child.nodeType === 3) {
-        // Text node
-        const text = (child.textContent || '').trim();
-        if (text) result += text + ' ';
-      } else if (child.nodeType === 1) {
-        // Element node
-        const el = child as Element;
-        const tagResult = this.parseKnownTag(el, indentLevel);
-        if (tagResult === SKIP) continue;
-        if (tagResult !== null) {
-          result += tagResult;
-        } else {
-          result += this.parseUnknownTag(el);
-        }
-      }
-    }
-
-    return this.regexEdits(result);
   }
 
-  private parseKnownTag(element: Element, indentLevel: number): ParseResult {
-    const name = element.localName;
+  // If the root is a Schedule, wrap it
+  if (root.localName === 'Schedule') {
+    return { type: 'document', prelims: [], body: [], schedules: [parseSchedule(root)] };
+  }
 
-    // Provision numbers
-    if (name === 'Pnumber') {
-      if (this.skipNextPnumber) {
-        this.skipNextPnumber = false;
-        return SKIP;
-      }
-      return this.formatPnumber(element, indentLevel);
-    }
+  // If the root is Schedules wrapper
+  if (root.localName === 'Schedules') {
+    return { type: 'document', prelims: [], body: [], schedules: parseSchedules(root) };
+  }
 
-    // Inline/text content
-    if (name === 'Text') return (element.textContent || '').replace(/\s+/g, ' ').trim() + ' ';
-    if (name === 'BlockAmendment') return this.formatBlockAmendment(element, indentLevel);
+  // Prelims as root element (fragment)
+  if (root.localName === 'PrimaryPrelims' || root.localName === 'SecondaryPrelims') {
+    return { type: 'document', prelims: parsePrelims(root), body: [], schedules: [] };
+  }
+  if (root.localName === 'EUPrelims') {
+    return { type: 'document', prelims: parseEUPrelims(root), body: [], schedules: [] };
+  }
 
-    // Grouping
-    if (name === 'Pblock') return this.formatPblock(element, indentLevel, '####');
-    if (name === 'PsubBlock') return this.formatPblock(element, indentLevel, '#####');
-    if (name === 'P1group') return this.formatPgroup(element, indentLevel);
+  // Standalone block element (Tabular, etc.)
+  if (isKnownBlockTag(root.localName)) {
+    return { type: 'document', prelims: parseBlockElement(root), body: [], schedules: [] };
+  }
 
-    // Structural divisions
-    if (name === 'Part') return this.formatDivision(element, indentLevel, '##');
-    if (name === 'Chapter') return this.formatDivision(element, indentLevel, '###');
+  // Otherwise walk through wrappers (Legislation, Primary, Body, etc.)
+  const result: Document = { type: 'document', prelims: [], body: [], schedules: [] };
+  collectDocument(root, result);
+  return result;
+}
 
-    // Schedules
-    if (name === 'Schedule') return this.formatSchedule(element, indentLevel);
-    if (name === 'Schedules') return this.formatSchedules(element, indentLevel);
-    if (name === 'ScheduleBody') return this.parseElement(element, indentLevel, true);
+function collectDocument(el: Element, doc: Document): void {
+  for (const child of childElements(el)) {
+    const name = child.localName;
 
-    // Tables
-    if (name === 'Tabular') return this.formatTable(element);
-    if (name === 'table' || name === 'tbody' || name === 'thead' || name === 'tfoot' || name === 'colgroup') {
-      return this.parseElement(element, indentLevel, true);
-    }
-    if (name === 'tr') return this.formatTableRow(element);
-    if (name === 'th' || name === 'td') return this.textContent(element);
-    if (name === 'col') return '';
-
-    // Lists
-    if (name === 'UnorderedList' || name === 'OrderedList') {
-      return this.parseElement(element, indentLevel, true);
-    }
-    if (name === 'ListItem') return this.formatListItem(element, indentLevel);
-
-    // Wrappers — recurse into children
-    if (name === 'P' || name === 'Para') return this.parseElement(element, indentLevel, true);
-    if (name === 'TitleBlock') return this.parseElement(element, indentLevel, true);
-    if (name === 'Legislation' || name === 'Primary' || name === 'Secondary' || name === 'EURetained' || name === 'Body') {
-      return this.parseElement(element, indentLevel, true);
-    }
-
-    // EU structural divisions (have Number/Title children like Part/Chapter)
-    if (name === 'EUPart') return this.formatDivision(element, indentLevel, '##');
-    if (name === 'EUTitle') return this.formatDivision(element, indentLevel, '##');
-    if (name === 'EUChapter') return this.formatDivision(element, indentLevel, '###');
-    if (name === 'EUSection' || name === 'EUSubsection') return this.formatDivision(element, indentLevel, '####');
-
-    // EU wrappers (no Number/Title of their own)
-    if (name === 'EUBody' || name === 'EUPreamble') {
-      return this.parseElement(element, indentLevel, true);
-    }
+    // Skip metadata and contents
+    if (name === 'Metadata' || name === 'Commentaries' || name === 'Commentary'
+        || name === 'CommentaryRef' || name === 'Contents') continue;
 
     // Prelims
     if (name === 'PrimaryPrelims' || name === 'SecondaryPrelims') {
-      return this.formatPrelims(element);
+      doc.prelims.push(...parsePrelims(child));
+      continue;
     }
-    if (name === 'EUPrelims') return this.formatEUPrelims(element, indentLevel);
-
-    // Preamble elements (secondary legislation and EU)
-    if (name === 'IntroductoryText' || name === 'EnactingText') {
-      return this.parseElement(element, indentLevel, true);
-    }
-
-    // Division (EU recitals) — Number + content
-    if (name === 'Division') return this.formatNumberedParagraph(element, indentLevel);
-
-    // Skip metadata, editorial commentary, and contents
-    if (name === 'Metadata') return '';
-    if (name === 'Commentaries' || name === 'Commentary' || name === 'CommentaryRef') return '';
-    if (name === 'Contents') return '';
-
-    // Footnotes — authorial, keep with newline separation
-    if (name === 'Footnote') return this.formatFootnote(element);
-    if (name === 'FootnoteRef') return this.textContent(element);
-
-    // Figures — can't render in plain text
-    if (name === 'Figure' || name === 'Image') return '\n[Figure]\n';
-
-    // P<n>para, P<n>group — recurse
-    if (/^P\d+para$/.test(name) || /^P\d+group$/.test(name)) {
-      return this.parseElement(element, indentLevel, true);
+    if (name === 'EUPrelims') {
+      doc.prelims.push(...parseEUPrelims(child));
+      continue;
     }
 
-    // P<n> — recurse with calculated indent (P1/P2 = 0, P3 = 1, P4 = 2, ...)
-    const pMatch = name.match(/^P(\d+)$/);
-    if (pMatch) {
-      const level = parseInt(pMatch[1], 10);
-      const newIndent = Math.max(0, level - 2);
-      return this.parseElement(element, newIndent, true);
+    // Schedules
+    if (name === 'Schedules') {
+      doc.schedules.push(...parseSchedules(child));
+      continue;
+    }
+    if (name === 'Schedule') {
+      doc.schedules.push(parseSchedule(child));
+      continue;
     }
 
-    return null;
+    // Structural elements
+    const structural = parseDivisionOrProvision(child);
+    if (structural) {
+      doc.body.push(structural);
+      continue;
+    }
+
+    // Known block elements at body level (Footnotes, tables, etc.)
+    if (isKnownBlockTag(name)) {
+      doc.body.push(...parseBlockElement(child));
+      continue;
+    }
+
+    // Wrappers — recurse
+    collectDocument(child, doc);
+  }
+}
+
+const KNOWN_BLOCK_TAGS = new Set([
+  'Text', 'Tabular', 'Figure', 'Image', 'BlockAmendment',
+  'UnorderedList', 'OrderedList', 'Footnote', 'FootnoteRef', 'Division',
+]);
+
+function isKnownBlockTag(name: string): boolean {
+  return KNOWN_BLOCK_TAGS.has(name);
+}
+
+// --- Divisions and Provisions dispatch ---
+
+/** Tag → DivisionName mapping for named divisions */
+const DIVISION_TAGS: Record<string, DivisionName> = {
+  Part: 'part',
+  Chapter: 'chapter',
+  Pblock: 'crossHeading',
+  PsubBlock: 'subHeading',
+  EUPart: 'part',
+  EUTitle: 'groupOfParts',
+  EUChapter: 'chapter',
+  EUSection: 'crossHeading',
+  EUSubsection: 'subHeading',
+};
+
+function parseDivisionOrProvision(el: Element): Division | Provision | null {
+  const name = el.localName;
+
+  if (name in DIVISION_TAGS) {
+    return parseDivision(el, DIVISION_TAGS[name]);
+  }
+  if (name === 'P1group') {
+    return parseP1group(el);
+  }
+  if (name === 'P1') {
+    return parseProvision(el);
+  }
+  return null;
+}
+
+// --- Division ---
+
+function parseDivision(el: Element, divName: DivisionName): Division {
+  let number: string | undefined;
+  let title = '';
+  const children: (Division | Provision)[] = [];
+
+  for (const child of childElements(el)) {
+    const tag = child.localName;
+    if (tag === 'Number') {
+      number = textContent(child);
+    } else if (tag === 'Title') {
+      title = textContent(child);
+    } else {
+      collectDivisionChildren(child, children);
+    }
   }
 
-  private parseUnknownTag(element: Element): string {
-    return (element.textContent || '').trim() + ' ';
+  return { type: 'division', name: divName, number, title, children };
+}
+
+function collectDivisionChildren(el: Element, out: (Division | Provision)[]): void {
+  // Try structural parse first
+  const structural = parseDivisionOrProvision(el);
+  if (structural) {
+    out.push(structural);
+    return;
   }
 
-  private regexEdits(result: string): string {
-    return result
-      .replace(/\u201c /g, '\u201c')
-      .replace(/ \u201d/g, '\u201d');
+  // Known block elements — wrap in a dummy leaf provision
+  if (isKnownBlockTag(el.localName)) {
+    const blocks = parseBlockElement(el);
+    if (blocks.length > 0) {
+      out.push({ type: 'provision', number: '', variant: 'leaf', content: blocks } as Provision);
+    }
+    return;
   }
 
-  // --- Formatters ---
+  // Wrapper elements — recurse into children
+  for (const child of childElements(el)) {
+    collectDivisionChildren(child, out);
+  }
+}
 
-  private formatPnumber(element: Element, indentLevel: number): string {
-    const indent = '\t'.repeat(indentLevel);
-    return `\n${indent}${this.textContent(element)}) `;
+// --- P1group → Provision with title ---
+
+function parseP1group(el: Element): Provision {
+  let groupTitle = '';
+  let p1El: Element | null = null;
+
+  for (const child of childElements(el)) {
+    if (child.localName === 'Title') {
+      groupTitle = textContent(child);
+    } else if (child.localName === 'P1') {
+      p1El = child;
+    }
   }
 
-  private formatTable(element: Element): string {
-    return '\n' + this.parseElement(element, 0, true).trim() + '\n';
+  return parseProvision(p1El ?? el, groupTitle || undefined);
+}
+
+// --- Provision (P1) ---
+
+function parseProvision(el: Element, title?: string): Provision {
+  let number = '';
+  const paraEls: Element[] = [];
+
+  for (const child of childElements(el)) {
+    if (child.localName === 'Pnumber') {
+      number = textContent(child);
+    } else if (child.localName === 'P1para') {
+      paraEls.push(child);
+    }
   }
 
-  private formatTableRow(element: Element): string {
-    const cells: string[] = [];
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'th' || child.localName === 'td') {
-        cells.push(this.textContent(child));
+  return buildLeafOrBranch(
+    paraEls,
+    (child) => parseSubOrParagraph(child),
+    (blocks) => ({ type: 'subProvision', number: '', variant: 'leaf', content: blocks }) as SubProvision,
+    (variant) => {
+      if (variant.kind === 'leaf') {
+        return { type: 'provision', number, title, variant: 'leaf', content: variant.blocks } as Provision;
       }
+      return { type: 'provision', number, title, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Provision;
+    },
+  );
+}
+
+/** Parse a standalone P2+ fragment as a Provision (for fragment root elements). */
+function parseProvisionAtAnyLevel(el: Element, level: number): Provision {
+  let number = '';
+  const paraTag = `P${level}para`;
+  const paraEls: Element[] = [];
+
+  for (const child of childElements(el)) {
+    if (child.localName === 'Pnumber') {
+      number = textContent(child);
+    } else if (child.localName === paraTag) {
+      paraEls.push(child);
     }
-    return '\n| ' + cells.join(' | ') + ' |';
   }
 
-  private formatBlockAmendment(element: Element, indentLevel: number): string {
-    const content = this.parseElement(element, indentLevel + 1, true);
-    const indent = '\t'.repeat(indentLevel + 1);
-    return content.replace(/\n/g, `\n${indent}`);
+  const childParser = level <= 2
+    ? (child: Element) => parseSubOrParagraph(child)
+    : (child: Element) => parseParagraphElement(child);
+
+  return buildLeafOrBranch(
+    paraEls,
+    childParser,
+    (blocks) => ({ type: 'subProvision', number: '', variant: 'leaf', content: blocks }) as SubProvision,
+    (variant) => {
+      if (variant.kind === 'leaf') {
+        return { type: 'provision', number, variant: 'leaf', content: variant.blocks } as Provision;
+      }
+      return { type: 'provision', number, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Provision;
+    },
+  );
+}
+
+// --- SubProvision (P2) ---
+
+function parseSubProvision(el: Element): SubProvision {
+  let number = '';
+  const paraEls: Element[] = [];
+
+  for (const child of childElements(el)) {
+    if (child.localName === 'Pnumber') {
+      number = textContent(child);
+    } else if (child.localName === 'P2para') {
+      paraEls.push(child);
+    }
   }
 
-  private formatPblock(element: Element, indentLevel: number, headingMark: string): string {
-    let result = '';
-    let startsWith: string | null = null;
+  return buildLeafOrBranch(
+    paraEls,
+    (child) => parseParagraphElement(child),
+    (blocks) => ({ type: 'paragraph', number: '', variant: 'leaf', content: blocks }) as Paragraph,
+    (variant) => {
+      if (variant.kind === 'leaf') {
+        return { type: 'subProvision', number, variant: 'leaf', content: variant.blocks } as SubProvision;
+      }
+      return { type: 'subProvision', number, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as SubProvision;
+    },
+  );
+}
 
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'Title') {
-        startsWith = `\n\n${headingMark} ${this.textContent(child)}\n`;
+// --- Paragraph (P3, P4, P5, ...) ---
+
+function parseParagraphAtLevel(el: Element, level: number): Paragraph {
+  let number = '';
+  const paraTag = `P${level}para`;
+  const paraEls: Element[] = [];
+
+  for (const child of childElements(el)) {
+    if (child.localName === 'Pnumber') {
+      number = textContent(child);
+    } else if (child.localName === paraTag) {
+      paraEls.push(child);
+    }
+  }
+
+  const childLevel = level + 1;
+  const childTag = `P${childLevel}`;
+
+  return buildLeafOrBranch(
+    paraEls,
+    (child) => child.localName === childTag ? parseParagraphAtLevel(child, childLevel) : null,
+    (blocks) => ({ type: 'paragraph', number: '', variant: 'leaf', content: blocks }) as Paragraph,
+    (variant) => {
+      if (variant.kind === 'leaf') {
+        return { type: 'paragraph', number, variant: 'leaf', content: variant.blocks } as Paragraph;
+      }
+      return { type: 'paragraph', number, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Paragraph;
+    },
+  );
+}
+
+/** Dispatch: is this element a P2 (SubProvision) or P3+ (Paragraph)? */
+function parseSubOrParagraph(child: Element): SubProvision | Paragraph | null {
+  if (child.localName === 'P2') return parseSubProvision(child);
+  const m = child.localName.match(/^P(\d+)$/);
+  if (m) {
+    const level = parseInt(m[1], 10);
+    if (level >= 3) return parseParagraphAtLevel(child, level);
+  }
+  return null;
+}
+
+function parseParagraphElement(child: Element): Paragraph | null {
+  const m = child.localName.match(/^P(\d+)$/);
+  if (m) {
+    const level = parseInt(m[1], 10);
+    if (level >= 3) return parseParagraphAtLevel(child, level);
+  }
+  return null;
+}
+
+// --- Generic leaf/branch detector ---
+
+type LeafOrBranch<C> =
+  | { kind: 'leaf'; blocks: Block[] }
+  | { kind: 'branch'; intro: Block[]; children: C[]; wrapUp: Block[] };
+
+function buildLeafOrBranch<C, R>(
+  paraEls: Element[],
+  tryParseChild: (el: Element) => C | null,
+  wrapBlocks: (blocks: Block[]) => C,
+  build: (variant: LeafOrBranch<C>) => R,
+): R {
+  const allBlocks: Block[] = [];
+  const childEntries: { index: number; child: C }[] = [];
+
+  for (const para of paraEls) {
+    for (const child of expandGroups(childElements(para))) {
+      const parsed = tryParseChild(child);
+      if (parsed !== null) {
+        childEntries.push({ index: allBlocks.length, child: parsed });
       } else {
-        result += this.parseElement(child, indentLevel);
+        allBlocks.push(...parseBlockElement(child));
       }
     }
-
-    return startsWith ? startsWith + result : result;
   }
 
-  private formatPgroup(element: Element, indentLevel: number): string {
-    let result = '';
-    let startsWith: string | null = null;
+  if (childEntries.length === 0) {
+    return build({ kind: 'leaf', blocks: allBlocks });
+  }
 
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'Title') {
-        const groupTitle = this.textContent(child);
-        const pnumber = element.getElementsByTagName('Pnumber')[0];
-        const pnumberText = pnumber ? this.textContent(pnumber) : '';
+  const firstIdx = childEntries[0].index;
+  const intro = allBlocks.slice(0, firstIdx);
+  const children: C[] = [];
+  // Walk child entries, wrapping any interstitial blocks as dummy children
+  for (let i = 0; i < childEntries.length; i++) {
+    if (i > 0) {
+      const prevIdx = childEntries[i - 1].index;
+      const currIdx = childEntries[i].index;
+      const between = allBlocks.slice(prevIdx, currIdx);
+      if (between.length > 0) {
+        children.push(wrapBlocks(between));
+      }
+    }
+    children.push(childEntries[i].child);
+  }
+  const lastIdx = childEntries[childEntries.length - 1].index;
+  const wrapUp = allBlocks.slice(lastIdx);
 
-        if (pnumber && !pnumberText.includes('Article')) {
-          startsWith = `\n\nSection ${pnumberText}) **${groupTitle}**\n`;
-          this.skipNextPnumber = true;
-        } else if (pnumber && pnumberText.includes('Article')) {
-          startsWith = `\n\n${pnumberText}) **${groupTitle}**\n`;
-          this.skipNextPnumber = true;
+  return build({ kind: 'branch', intro, children, wrapUp });
+}
+
+// --- Schedules ---
+
+function parseSchedules(el: Element): Schedule[] {
+  const schedules: Schedule[] = [];
+  for (const child of childElements(el)) {
+    if (child.localName === 'Schedule') {
+      schedules.push(parseSchedule(child));
+    }
+    // Skip <Title>SCHEDULES</Title> wrapper title
+  }
+  return schedules;
+}
+
+function parseSchedule(el: Element): Schedule {
+  let number = '';
+  let title: string | undefined;
+  let subtitle: string | undefined;
+  let reference: string | undefined;
+  const body: (Division | Provision | Block)[] = [];
+
+  for (const child of childElements(el)) {
+    const tag = child.localName;
+    if (tag === 'Number') {
+      number = textContent(child);
+    } else if (tag === 'TitleBlock') {
+      for (const tbChild of childElements(child)) {
+        if (tbChild.localName === 'Title') title = textContent(tbChild);
+        else if (tbChild.localName === 'Subtitle') subtitle = textContent(tbChild);
+      }
+    } else if (tag === 'Reference') {
+      reference = textContent(child);
+    } else if (tag === 'ScheduleBody') {
+      parseScheduleBody(child, body);
+    } else {
+      // Direct structural children (no ScheduleBody wrapper)
+      parseScheduleBody(child, body);
+    }
+  }
+
+  return { type: 'schedule', number, title, subtitle, reference, body };
+}
+
+function parseScheduleBody(el: Element, body: (Division | Provision | Block)[]): void {
+  for (const child of childElements(el)) {
+    const structural = parseDivisionOrProvision(child);
+    if (structural) {
+      body.push(structural);
+      continue;
+    }
+    const blocks = parseBlockElement(child);
+    if (blocks.length) {
+      body.push(...blocks);
+      continue;
+    }
+    // Wrapper — recurse
+    parseScheduleBody(child, body);
+  }
+}
+
+// --- Prelims ---
+
+function parsePrelims(el: Element): Block[] {
+  const blocks: Block[] = [];
+
+  for (const child of childElements(el)) {
+    const name = child.localName;
+    if (name === 'Title') {
+      blocks.push({ type: 'text', content: `# ${textContent(child)}` });
+    } else if (name === 'Number') {
+      blocks.push({ type: 'text', content: textContent(child) });
+    } else if (name === 'LongTitle') {
+      blocks.push({ type: 'text', content: textContent(child) });
+    } else if (name === 'DateOfEnactment' || name === 'MadeDate'
+               || name === 'LaidDate' || name === 'ComingIntoForce') {
+      blocks.push({ type: 'text', content: formatPrelimsDate(child) });
+    } else if (name === 'SubjectInformation') {
+      // Skip metadata
+    } else if (name === 'PrimaryPreamble' || name === 'SecondaryPreamble') {
+      for (const preambleChild of childElements(child)) {
+        blocks.push({ type: 'text', content: extractText(preambleChild) });
+      }
+    }
+  }
+
+  return blocks;
+}
+
+function formatPrelimsDate(element: Element): string {
+  const topParts: string[] = [];
+  const clauses: string[] = [];
+  for (const child of childElements(element)) {
+    if (child.localName === 'ComingIntoForceClauses') {
+      const clauseParts: string[] = [];
+      for (const clauseChild of childElements(child)) {
+        const text = textContent(clauseChild);
+        if (text) clauseParts.push(text);
+      }
+      if (clauseParts.length) clauses.push(clauseParts.join(' '));
+    } else {
+      const text = textContent(child);
+      if (text) topParts.push(text);
+    }
+  }
+  const top = topParts.join(' ');
+  if (clauses.length === 0) return top;
+  return [top, ...clauses].filter(Boolean).join('\n');
+}
+
+function parseEUPrelims(el: Element): Block[] {
+  const blocks: Block[] = [];
+
+  for (const child of childElements(el)) {
+    const name = child.localName;
+    if (name === 'MultilineTitle') {
+      const lines: string[] = [];
+      for (const textEl of childElements(child)) {
+        const text = (textEl.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text) lines.push(text);
+      }
+      blocks.push({ type: 'text', content: `# ${lines.join('\n')}` });
+    } else if (name === 'EUPreamble') {
+      // Recurse into preamble for Divisions and text
+      for (const pc of childElements(child)) {
+        if (pc.localName === 'Division') {
+          blocks.push(parseNumberedParagraph(pc));
+        } else if (pc.localName === 'CommentaryRef') {
+          // skip
+        } else {
+          const text = extractText(pc);
+          if (text) blocks.push({ type: 'text', content: text });
         }
-      } else {
-        result += this.parseElement(child, indentLevel);
       }
+    } else if (name === 'CommentaryRef') {
+      // Skip
+    } else {
+      const text = extractText(child);
+      if (text) blocks.push({ type: 'text', content: text });
     }
-
-    return startsWith ? startsWith + result : result;
   }
 
-  /**
-   * Format a structural division (Part or Chapter).
-   * Both have the same structure: Number, Title, then content.
-   */
-  private formatDivision(element: Element, indentLevel: number, headingMark: string): string {
-    let result = '';
-    let startsWith = '';
+  return blocks;
+}
 
-    for (const child of this.childElements(element)) {
-      const name = child.localName;
-      if (name === 'Number' || name === 'Title') {
-        startsWith += `${headingMark} ${this.textContent(child)}\n`;
-      } else {
-        result += this.parseElement(child, indentLevel);
-      }
-    }
+// --- Block elements ---
 
-    if (startsWith) {
-      result = startsWith + '\n' + result;
-    }
-    return result;
+function parseBlockElement(el: Element): Block[] {
+  const name = el.localName;
+
+  if (name === 'Text') {
+    const content = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (content) return [{ type: 'text', content }];
+    return [];
   }
 
-  private formatSchedules(element: Element, indentLevel: number): string {
-    let result = '';
-    let startsWith = '';
+  if (name === 'Tabular') return [parseTable(el)];
 
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'Title') {
-        startsWith += `\n\n## ${this.textContent(child)}\n`;
-      } else {
-        result += this.parseElement(child, indentLevel);
-      }
-    }
-
-    return startsWith + result;
+  if (name === 'Figure' || name === 'Image') {
+    return [{ type: 'figure' } as Figure];
   }
 
-  private formatSchedule(element: Element, indentLevel: number): string {
-    let result = '';
-    let startsWith = '';
+  if (name === 'BlockAmendment') return [parseBlockAmendment(el)];
 
-    for (const child of this.childElements(element)) {
-      const name = child.localName;
-      if (name === 'Number') {
-        startsWith += `## ${this.textContent(child)}\n`;
-      } else if (name === 'TitleBlock') {
-        // TitleBlock can contain Title and Subtitle children
-        for (const tbChild of this.childElements(child)) {
-          if (tbChild.localName === 'Title' || tbChild.localName === 'Subtitle') {
-            startsWith += `## ${this.textContent(tbChild)}\n`;
-          }
-        }
-      } else if (name === 'Reference') {
-        startsWith += `${this.textContent(child)}\n`;
-      } else {
-        result += this.parseElement(child, indentLevel);
-      }
-    }
+  if (name === 'UnorderedList') return [parseList(el, false)];
+  if (name === 'OrderedList') return [parseList(el, true)];
 
-    if (startsWith) {
-      result = '\n' + startsWith + '\n' + result;
-    }
-    return result;
+  if (name === 'Footnote') return [parseFootnote(el)];
+  if (name === 'FootnoteRef') {
+    const content = textContent(el);
+    return content ? [{ type: 'text', content }] : [];
   }
 
-  private formatPrelims(element: Element): string {
-    let result = '';
+  if (name === 'Division') return [parseNumberedParagraph(el)];
 
-    for (const child of this.childElements(element)) {
-      const name = child.localName;
-      if (name === 'Title') {
-        result += `# ${this.textContent(child)}\n\n`;
-      } else if (name === 'Number') {
-        result += `${this.textContent(child)}\n\n`;
-      } else if (name === 'LongTitle') {
-        result += `${this.textContent(child)}\n\n`;
-      } else if (name === 'DateOfEnactment' || name === 'MadeDate' || name === 'LaidDate' || name === 'ComingIntoForce') {
-        result += this.formatPrelimsDate(child) + '\n\n';
-      } else if (name === 'SubjectInformation') {
-        // Secondary legislation subject categories — skip (metadata, not legislative text)
-      } else if (name === 'PrimaryPreamble' || name === 'SecondaryPreamble') {
-        for (const preambleChild of this.childElements(child)) {
-          result += this.parseElement(preambleChild, 0).trim() + '\n\n';
+  // Wrappers that contain block elements: P, Para, TitleBlock, etc.
+  if (name === 'P' || name === 'Para' || name === 'TitleBlock'
+      || name === 'IntroductoryText' || name === 'EnactingText') {
+    const blocks: Block[] = [];
+    for (const child of childElements(el)) {
+      blocks.push(...parseBlockElement(child));
+    }
+    return blocks;
+  }
+
+  // Metadata elements to skip
+  if (name === 'Metadata' || name === 'Commentaries' || name === 'Commentary'
+      || name === 'CommentaryRef' || name === 'Contents') {
+    return [];
+  }
+
+  // Table sub-elements handled within parseTable
+  if (name === 'table' || name === 'tbody' || name === 'thead' || name === 'tfoot'
+      || name === 'colgroup' || name === 'tr' || name === 'th' || name === 'td' || name === 'col') {
+    return [];
+  }
+
+  // Unknown inline elements — extract text
+  const content = textContent(el);
+  if (content) return [{ type: 'text', content }];
+  return [];
+}
+
+// --- Block type parsers ---
+
+function parseTable(el: Element): Table {
+  const rows: string[][] = [];
+  collectTableRows(el, rows);
+  return { type: 'table', rows };
+}
+
+function collectTableRows(el: Element, rows: string[][]): void {
+  for (const child of childElements(el)) {
+    if (child.localName === 'tr') {
+      const cells: string[] = [];
+      for (const cell of childElements(child)) {
+        if (cell.localName === 'th' || cell.localName === 'td') {
+          cells.push(textContent(cell));
         }
       }
+      rows.push(cells);
+    } else if (child.localName === 'col') {
+      // skip
+    } else {
+      collectTableRows(child, rows);
     }
+  }
+}
 
-    return result;
+function parseBlockAmendment(el: Element): BlockAmendment {
+  const children: (Division | Provision | Block)[] = [];
+
+  for (const child of childElements(el)) {
+    // Try structural parse first
+    const structural = parseDivisionOrProvision(child);
+    if (structural) {
+      children.push(structural);
+      continue;
+    }
+    // Fall back to block parse
+    const blocks = parseBlockElement(child);
+    children.push(...blocks);
   }
 
-  /**
-   * Format a date element from prelims (MadeDate, LaidDate, ComingIntoForce, etc.).
-   * These contain child elements like <Text>Made</Text><DateText>1st Jan 2024</DateText>
-   * which must be joined with spaces, not concatenated via textContent.
-   *
-   * ComingIntoForce can also contain ComingIntoForceClauses sub-elements, each with
-   * their own Text + DateText pair (for staggered commencement dates).
-   */
-  private formatPrelimsDate(element: Element): string {
-    const topParts: string[] = [];
-    const clauses: string[] = [];
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'ComingIntoForceClauses') {
-        // Each clause has its own Text + DateText pair
-        const clauseParts: string[] = [];
-        for (const clauseChild of this.childElements(child)) {
-          const text = this.textContent(clauseChild);
-          if (text) clauseParts.push(text);
-        }
-        if (clauseParts.length) clauses.push(clauseParts.join(' '));
-      } else {
-        const text = this.textContent(child);
-        if (text) topParts.push(text);
+  return { type: 'blockAmendment', children };
+}
+
+function parseList(el: Element, ordered: boolean): List {
+  const items: Block[][] = [];
+  for (const child of childElements(el)) {
+    if (child.localName === 'ListItem') {
+      const itemBlocks: Block[] = [];
+      for (const itemChild of childElements(child)) {
+        itemBlocks.push(...parseBlockElement(itemChild));
       }
+      items.push(itemBlocks);
     }
-    const top = topParts.join(' ');
-    if (clauses.length === 0) return top;
-    return [top, ...clauses].filter(Boolean).join('\n');
   }
+  return { type: 'list', ordered, items };
+}
 
-  private formatEUPrelims(element: Element, indentLevel: number): string {
-    let result = '';
-
-    for (const child of this.childElements(element)) {
-      const name = child.localName;
-      if (name === 'MultilineTitle') {
-        // MultilineTitle contains multiple <Text> children — join with newlines
-        const lines: string[] = [];
-        for (const textEl of this.childElements(child)) {
-          const text = (textEl.textContent || '').replace(/\s+/g, ' ').trim();
-          if (text) lines.push(text);
-        }
-        result += `# ${lines.join('\n')}\n\n`;
-      } else if (name === 'EUPreamble') {
-        result += this.parseElement(child, indentLevel, true);
-      } else if (name === 'CommentaryRef') {
-        // Skip
-      } else {
-        result += this.parseElement(child, indentLevel);
-      }
+function parseFootnote(el: Element): Footnote {
+  let number = '';
+  let content = '';
+  for (const child of childElements(el)) {
+    if (child.localName === 'Number') {
+      number = textContent(child);
+    } else {
+      const text = textContent(child);
+      if (text) content = content ? content + ' ' + text : text;
     }
-
-    return result;
   }
+  return { type: 'footnote', number, content };
+}
 
-  private formatNumberedParagraph(element: Element, indentLevel: number): string {
-    let number = '';
-    let content = '';
-    for (const child of this.childElements(element)) {
-      if (child.localName === 'Number') {
-        number = this.textContent(child);
-      } else {
-        content += this.parseElement(child, indentLevel);
-      }
+function parseNumberedParagraph(el: Element): NumberedParagraph {
+  let number = '';
+  const children: Block[] = [];
+  for (const child of childElements(el)) {
+    if (child.localName === 'Number') {
+      number = textContent(child);
+    } else {
+      children.push(...parseBlockElement(child));
     }
-    return number ? `\n${number} ${content.trim()}\n` : content;
   }
+  return { type: 'numberedParagraph', number, children };
+}
 
-  private formatFootnote(element: Element): string {
-    const parts: string[] = [];
-    for (const child of this.childElements(element)) {
-      parts.push(this.textContent(child));
+// --- Fragment detection ---
+
+function findFragmentTarget(doc: XMLDocument): Element | null {
+  const identifiers = doc.getElementsByTagName('dc:identifier');
+  if (identifiers.length === 0) return null;
+
+  const uri = (identifiers[0].textContent || '').trim();
+  if (!uri) return null;
+
+  const parsed = parseLegislationUri(uri);
+  if (!parsed?.fragment) return null;
+
+  const targetId = parsed.fragment.replace(/\//g, '-');
+  return findElementById(doc.documentElement, targetId);
+}
+
+function findElementById(node: Element, id: string): Element | null {
+  if (node.getAttribute('id') === id) return node;
+
+  for (let i = 0; i < node.childNodes.length; i++) {
+    const child = node.childNodes[i];
+    if (child.nodeType === 1) {
+      const found = findElementById(child as Element, id);
+      if (found) return found;
     }
-    return '\n' + parts.join(' ');
   }
+  return null;
+}
 
-  private formatListItem(element: Element, indentLevel: number): string {
-    const indent = '\t'.repeat(indentLevel + 1);
-    const content = this.parseElement(element, indentLevel + 1, true);
-    return `\n${indent}- ${content.trim()}`;
+// --- Helpers ---
+
+function textContent(element: Element): string {
+  return (element.textContent || '').trim();
+}
+
+/** Extract all text from an element, collapsing whitespace. */
+function extractText(element: Element): string {
+  return (element.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function* childElements(element: Element): Iterable<Element> {
+  for (let i = 0; i < element.childNodes.length; i++) {
+    const child = element.childNodes[i];
+    if (child.nodeType === 1) yield child as Element;
   }
+}
 
-  // --- Fragment detection ---
-
-  /**
-   * If the document metadata contains a dc:identifier with a fragment path,
-   * find and return the target element by its id attribute.
-   * Returns null for full documents or when the target isn't found.
-   */
-  private findFragmentTarget(doc: Document): Element | null {
-    // Find first dc:identifier element anywhere in the document
-    const identifiers = doc.getElementsByTagName('dc:identifier');
-    if (identifiers.length === 0) return null;
-
-    const uri = (identifiers[0].textContent || '').trim();
-    if (!uri) return null;
-
-    const parsed = parseLegislationUri(uri);
-    if (!parsed?.fragment) return null;
-
-    // Convert fragment from slash form (section/1) to dash form (section-1)
-    const targetId = parsed.fragment.replace(/\//g, '-');
-
-    return this.findElementById(doc.documentElement, targetId);
-  }
-
-  /** Recursively search the DOM for an element with the given id attribute. */
-  private findElementById(node: Element, id: string): Element | null {
-    if (node.getAttribute('id') === id) return node;
-
-    for (let i = 0; i < node.childNodes.length; i++) {
-      const child = node.childNodes[i];
-      if (child.nodeType === 1) {
-        const found = this.findElementById(child as Element, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
-
-  // --- Helpers ---
-
-  private textContent(element: Element): string {
-    return (element.textContent || '').trim();
-  }
-
-  /** Iterate over direct child elements, skipping text nodes. */
-  private *childElements(element: Element): Iterable<Element> {
-    for (let i = 0; i < element.childNodes.length; i++) {
-      const child = element.childNodes[i];
-      if (child.nodeType === 1) yield child as Element;
+/** Flatten group wrappers (e.g. P2group) so each child provision is yielded individually. */
+function* expandGroups(elements: Iterable<Element>): Iterable<Element> {
+  for (const el of elements) {
+    if (el.localName.match(/^P\dgroup$/)) {
+      yield* childElements(el);
+    } else {
+      yield el;
     }
   }
 }

@@ -1,10 +1,17 @@
 /**
- * Tests for CLMLTextParser
+ * Tests for the CLML text parser.
+ *
+ * End-to-end pipeline tests: XML → parse() → Document → serializeDocument() → text.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { CLMLTextParser } from '../../parsers/clml-text-parser.js';
+import { parse } from '../../parsers/clml-text-parser.js';
+import { serializeDocument } from '../../parsers/clml-text-serializer.js';
+
+function parseToText(xml: string): string {
+  return serializeDocument(parse(xml));
+}
 
 test('simple section', () => {
   const xml = `
@@ -15,8 +22,7 @@ test('simple section', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.strictEqual(result, '1) A person is guilty of theft if he dishonestly appropriates property.');
 });
@@ -42,8 +48,7 @@ test('section with subsections', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('2) It is immaterial'), 'Should include section number and text');
   assert.ok(result.includes('1) First subsection'), 'Should include first subsection');
@@ -71,8 +76,7 @@ test('deeply nested provisions (P3, P4)', () => {
       </P2para>
     </P2>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   // P3 should have indent level 1, P4 indent level 2
   assert.ok(result.includes('\ta) Paragraph a text.'), 'P3 should be indented once');
@@ -92,8 +96,7 @@ test('Part with Number and Title', () => {
       </P1>
     </Part>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('## Part 1'), 'Should include Part number as heading');
   assert.ok(result.includes('## Preliminary'), 'Should include Part title as heading');
@@ -113,8 +116,7 @@ test('Chapter with Number and Title', () => {
       </P1>
     </Chapter>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('### Chapter 2'), 'Should include Chapter number as h3');
   assert.ok(result.includes('### Interpretation'), 'Should include Chapter title as h3');
@@ -133,8 +135,7 @@ test('PsubBlock with title', () => {
       </P1>
     </PsubBlock>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('##### Minor offences'), 'Should format PsubBlock title as h5');
   assert.ok(result.includes('1) Content here.'), 'Should include section content');
@@ -155,8 +156,7 @@ test('PrimaryPrelims', () => {
       </DateOfEnactment>
     </PrimaryPrelims>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('# Theft Act 1968'), 'Should format title as h1');
   assert.ok(result.includes('1968 CHAPTER 60'), 'Should include chapter number');
@@ -175,8 +175,7 @@ test('SecondaryPrelims', () => {
       </MadeDate>
     </SecondaryPrelims>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('2024 No. 123'), 'Should include SI number');
   assert.ok(result.includes('# The Example Regulations 2024'), 'Should format title as h1');
@@ -195,8 +194,7 @@ test('P1group with title', () => {
       </P1>
     </P1group>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('Section 1) **Basic definition of theft**'), 'Should format P1group heading');
   assert.ok(result.includes('A person is guilty'), 'Should include section text');
@@ -217,8 +215,7 @@ test('P1group with Article', () => {
       </P1>
     </P1group>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('Article 1) **Scope**'), 'Should use Article format, not Section');
 });
@@ -235,8 +232,7 @@ test('Pblock with title', () => {
       </P1>
     </Pblock>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('#### General provisions'), 'Should format Pblock title as h4');
   assert.ok(result.includes('1) Content'), 'Should include section content');
@@ -260,8 +256,7 @@ test('Schedule with title block', () => {
       </ScheduleBody>
     </Schedule>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('## Schedule 1'), 'Should format schedule number');
   assert.ok(result.includes('## Powers of Attorney'), 'Should format schedule title');
@@ -290,8 +285,7 @@ test('table with header and rows', () => {
       </table>
     </Tabular>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('| Expression | Modification |'), 'Should format header row with pipes');
   assert.ok(result.includes('| IP completion day | exit day |'), 'Should format data rows with pipes');
@@ -315,8 +309,7 @@ test('unordered list', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('The following items:'), 'Should include intro text');
   assert.ok(result.includes('- First item'), 'Should include first list item');
@@ -332,8 +325,7 @@ test('smart quote spacing', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('\u201ctheft\u201d'), 'Should remove spaces inside smart quotes');
 });
@@ -368,8 +360,7 @@ test('full document structure', () => {
       </Primary>
     </Legislation>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   // Should have prelims
   assert.ok(result.includes('# Example Act 2024'), 'Should include act title');
@@ -393,8 +384,7 @@ test('unknown tags fall through to text content', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('See the 1998 Act for details.'), 'Should extract text from unknown inline elements');
 });
@@ -416,14 +406,13 @@ test('BlockAmendment indentation', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
   assert.ok(result.includes('5) Replacement text here.'), 'Should include amendment content');
 });
 
-test('Schedules wrapper with Title', () => {
+test('Schedules wrapper with Title (title dropped)', () => {
   const xml = `
     <Schedules>
       <Title>SCHEDULES</Title>
@@ -441,10 +430,9 @@ test('Schedules wrapper with Title', () => {
       </Schedule>
     </Schedules>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
-  assert.ok(result.includes('## SCHEDULES'), 'Should format Schedules title as heading');
+  assert.ok(!result.includes('## SCHEDULES'), 'Should NOT include Schedules wrapper title');
   assert.ok(result.includes('## Schedule 1'), 'Should format individual schedule number');
   assert.ok(result.includes('## First Schedule Title'), 'Should format schedule title');
 });
@@ -465,8 +453,7 @@ test('Schedule with Subtitle in TitleBlock', () => {
       </ScheduleBody>
     </Schedule>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('## Main Title'), 'Should include title');
   assert.ok(result.includes('## A subtitle here'), 'Should include subtitle');
@@ -488,8 +475,7 @@ test('Contents element is skipped', () => {
       </P1>
     </Body>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(!result.includes('Table of Contents'), 'Should not include Contents');
   assert.ok(result.includes('1) Actual content.'), 'Should include body content');
@@ -506,8 +492,7 @@ test('Footnote elements with newline separation', () => {
       <Footnote id="f2"><Number>2</Number><FootnoteText><Para><Text>Second footnote.</Text></Para></FootnoteText></Footnote>
     </Body>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('See note.'), 'Should include body text');
   assert.ok(result.includes('1 First footnote.'), 'Should include first footnote with number separated');
@@ -528,8 +513,7 @@ test('Figure element shows placeholder', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('See the diagram below.'), 'Should include text');
   assert.ok(result.includes('[Figure]'), 'Should include figure placeholder');
@@ -546,8 +530,7 @@ test('Text element collapses internal whitespace', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('under this section only if—'), 'Should collapse newlines and indentation in Text');
   assert.ok(!result.includes('under\n'), 'Should not contain hard line breaks within Text');
@@ -570,31 +553,26 @@ test('BlockAmendment is indented at top level', () => {
       </P1para>
     </P1>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
   assert.ok(result.includes('\t5) New section five text.'), 'Block amendment should be indented');
 });
 
-test('parser is reusable across multiple calls', () => {
-  const parser = new CLMLTextParser();
+test('parser returns Document type', () => {
+  const xml = `<P1><Pnumber>1</Pnumber><P1para><Text>First.</Text></P1para></P1>`;
+  const doc = parse(xml);
 
-  const xml1 = `<P1><Pnumber>1</Pnumber><P1para><Text>First.</Text></P1para></P1>`;
-  const xml2 = `<P1><Pnumber>2</Pnumber><P1para><Text>Second.</Text></P1para></P1>`;
-
-  const result1 = parser.parse(xml1);
-  const result2 = parser.parse(xml2);
-
-  assert.ok(result1.includes('1) First.'), 'First parse should work');
-  assert.ok(result2.includes('2) Second.'), 'Second parse should work (state reset)');
+  assert.strictEqual(doc.type, 'document', 'Should return a Document');
+  assert.ok(Array.isArray(doc.body), 'Should have body array');
+  assert.ok(Array.isArray(doc.prelims), 'Should have prelims array');
+  assert.ok(Array.isArray(doc.schedules), 'Should have schedules array');
 });
 
 test('SecondaryPrelims date labels are separated from dates', () => {
   const xml = `<SecondaryPrelims><Number>2024 No. 123</Number><Title>The Example Regulations 2024</Title><MadeDate><Text>Made</Text><DateText>1st January 2024</DateText></MadeDate><LaidDate><Text>Laid before Parliament</Text><DateText>5th January 2024</DateText></LaidDate><ComingIntoForce><Text>Coming into force</Text><DateText>1st February 2024</DateText></ComingIntoForce></SecondaryPrelims>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('Made 1st January 2024'), 'Should separate Made label from date');
   assert.ok(result.includes('Laid before Parliament 5th January 2024'), 'Should separate Laid label from date');
@@ -615,8 +593,7 @@ test('SecondaryPreamble is included in secondary prelims', () => {
       </SecondaryPreamble>
     </SecondaryPrelims>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('The Secretary of State makes these Regulations.'), 'Should include introductory text');
   assert.ok(result.includes('A draft has been laid before Parliament.'), 'Should include enacting text');
@@ -634,8 +611,7 @@ test('EUPrelims MultilineTitle renders with line breaks', () => {
       </EUPrelims>
     </EURetained>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('# Regulation (EU) 2016/679'), 'Should format as heading');
   assert.ok(!result.includes('Councilof'), 'Should not concatenate title lines without spaces');
@@ -659,8 +635,7 @@ test('EU Division renders as numbered paragraph', () => {
       </EUPrelims>
     </EURetained>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('(1) The protection of natural persons is a fundamental right.'), 'Should format division with number');
   assert.ok(result.includes('(2) The principles should respect fundamental freedoms.'), 'Should format second division');
@@ -695,8 +670,7 @@ test('fragment: parses only the target section, skipping ancestor headings', () 
       </Primary>
     </Legislation>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('Section 1) **Overview**'), 'Should include target section heading');
   assert.ok(result.includes('This Act makes provision about examples.'), 'Should include section text');
@@ -731,8 +705,7 @@ test('fragment: full document with no fragment parses from root', () => {
       </Primary>
     </Legislation>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('## Part 1'), 'Should include Part heading for full document');
   assert.ok(result.includes('## Introduction'), 'Should include Part title for full document');
@@ -767,8 +740,7 @@ test('fragment: uses first dc:identifier when multiple exist', () => {
       </Primary>
     </Legislation>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   assert.ok(result.includes('Section 2) **Definitions**'), 'Should use first dc:identifier (section/2)');
   assert.ok(!result.includes('## Part 1'), 'Should NOT include ancestor Part heading');
@@ -801,10 +773,86 @@ test('fragment: falls back to root when target ID not found', () => {
       </Primary>
     </Legislation>`;
 
-  const parser = new CLMLTextParser();
-  const result = parser.parse(xml);
+  const result = parseToText(xml);
 
   // Should gracefully fall back to parsing the full document
   assert.ok(result.includes('## Part 1'), 'Should include Part heading (fallback to root)');
   assert.ok(result.includes('Section 1) **Overview**'), 'Should include section content');
+});
+
+// --- Data preservation tests ---
+
+test('interstitial text between nested provisions is preserved', () => {
+  const xml = `
+    <P1>
+      <Pnumber>1</Pnumber>
+      <P1para>
+        <Text>A person commits an offence if—</Text>
+        <P2>
+          <Pnumber>(a)</Pnumber>
+          <P2para><Text>condition one,</Text></P2para>
+        </P2>
+        <Text>or</Text>
+        <P2>
+          <Pnumber>(b)</Pnumber>
+          <P2para><Text>condition two.</Text></P2para>
+        </P2>
+      </P1para>
+    </P1>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('(a)'), 'Should include first subsection');
+  assert.ok(result.includes('(b)'), 'Should include second subsection');
+  assert.ok(result.includes('or'), 'Interstitial text between children must not be dropped');
+});
+
+test('P2group with multiple P2 children preserves all siblings', () => {
+  const xml = `
+    <P1>
+      <Pnumber>1</Pnumber>
+      <P1para>
+        <Text>A person commits an offence if—</Text>
+        <P2group>
+          <P2>
+            <Pnumber>(a)</Pnumber>
+            <P2para><Text>condition one,</Text></P2para>
+          </P2>
+          <P2>
+            <Pnumber>(b)</Pnumber>
+            <P2para><Text>condition two, or</Text></P2para>
+          </P2>
+          <P2>
+            <Pnumber>(c)</Pnumber>
+            <P2para><Text>condition three.</Text></P2para>
+          </P2>
+        </P2group>
+      </P1para>
+    </P1>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('(a)'), 'Should include first subsection');
+  assert.ok(result.includes('(b)'), 'Should include second subsection');
+  assert.ok(result.includes('(c)'), 'Should include third subsection');
+});
+
+test('non-structural content inside a division is preserved', () => {
+  const xml = `
+    <Part>
+      <Number>Part 1</Number>
+      <Title>Preliminary</Title>
+      <Text>This Part sets out general provisions.</Text>
+      <P1>
+        <Pnumber>1</Pnumber>
+        <P1para><Text>Overview of this Act.</Text></P1para>
+      </P1>
+    </Part>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('## Part 1'), 'Should include Part heading');
+  assert.ok(result.includes('1) Overview'), 'Should include provision');
+  assert.ok(result.includes('This Part sets out general provisions.'),
+    'Non-structural text inside a division must not be dropped');
 });

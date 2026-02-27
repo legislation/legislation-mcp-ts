@@ -5,7 +5,8 @@
  */
 
 import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
-import { CLMLTextParser } from "../parsers/clml-text-parser.js";
+import { parse } from "../parsers/clml-text-parser.js";
+import { serializeDocument } from "../parsers/clml-text-serializer.js";
 
 export const name = "get_legislation_fragment";
 
@@ -76,7 +77,7 @@ export async function execute(
     }
 
     const content = format === "text"
-      ? new CLMLTextParser().parse(result.content)
+      ? serializeDocument(parse(result.content))
       : result.content;
 
     return {
