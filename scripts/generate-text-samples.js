@@ -11,6 +11,7 @@
  *   npm run build && node scripts/generate-text-samples.js
  *
  * Add --xml to also save the raw CLML alongside each text file.
+ * Add --json to also save the parsed Document tree as JSON.
  */
 
 import { LegislationClient } from '../build/api/legislation-client.js';
@@ -45,6 +46,7 @@ const FRAGMENTS = [
 ];
 
 const saveXml = process.argv.includes('--xml');
+const saveJson = process.argv.includes('--json');
 
 async function main() {
   mkdirSync(SAMPLES_DIR, { recursive: true });
@@ -62,10 +64,14 @@ async function main() {
         console.log('disambiguation (skipped)');
         continue;
       }
-      const text = serializeDocument(parse(result.content));
+      const doc = parse(result.content);
+      const text = serializeDocument(doc);
       writeFileSync(join(SAMPLES_DIR, `${label}.txt`), text + '\n');
       if (saveXml) {
         writeFileSync(join(SAMPLES_DIR, `${label}.xml`), result.content);
+      }
+      if (saveJson) {
+        writeFileSync(join(SAMPLES_DIR, `${label}.json`), JSON.stringify(doc, null, 2) + '\n');
       }
       console.log(`${text.length} chars`);
       ok++;
@@ -84,10 +90,14 @@ async function main() {
         console.log('disambiguation (skipped)');
         continue;
       }
-      const text = serializeDocument(parse(result.content));
+      const doc = parse(result.content);
+      const text = serializeDocument(doc);
       writeFileSync(join(SAMPLES_DIR, `${label}.txt`), text + '\n');
       if (saveXml) {
         writeFileSync(join(SAMPLES_DIR, `${label}.xml`), result.content);
+      }
+      if (saveJson) {
+        writeFileSync(join(SAMPLES_DIR, `${label}.json`), JSON.stringify(doc, null, 2) + '\n');
       }
       console.log(`${text.length} chars`);
       ok++;
