@@ -429,6 +429,28 @@ test('unknown tags fall through to text content', () => {
   assert.ok(result.includes('See the 1998 Act for details.'), 'Should extract text from unknown inline elements');
 });
 
+test('BlockSection sibling of P1para is preserved', () => {
+  const xml = `
+    <P1>
+      <Pnumber>1</Pnumber>
+      <P1para>
+        <Text>The following table applies.</Text>
+      </P1para>
+      <Tabular>
+        <table>
+          <tbody>
+            <tr><td>A</td><td>B</td></tr>
+          </tbody>
+        </table>
+      </Tabular>
+    </P1>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('The following table applies.'), 'Should include P1para text');
+  assert.ok(result.includes('A'), 'Should include table content from BlockSection sibling');
+});
+
 test('BlockAmendment indentation', () => {
   const xml = `
     <P1>
