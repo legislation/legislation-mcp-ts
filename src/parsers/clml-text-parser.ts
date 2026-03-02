@@ -27,7 +27,7 @@ function parseDocument(root: Element): Document {
   // If the root IS a structural element (fragment), parse it directly
   const structural = parseDivisionOrProvision(root);
   if (structural) {
-    return { type: 'document', prelims: [], body: [structural], schedules: [] };
+    return { type: 'document', prelims: [], body: structural, schedules: [] };
   }
 
   // Standalone P2 fragment — treat as a provision
@@ -99,7 +99,7 @@ function collectDocument(el: Element, doc: Document): void {
     // Structural elements
     const structural = parseDivisionOrProvision(child);
     if (structural) {
-      doc.body.push(structural);
+      doc.body.push(...structural);
       continue;
     }
 
@@ -138,17 +138,17 @@ const DIVISION_TAGS: Record<string, DivisionName> = {
   EUSubsection: 'subHeading',
 };
 
-function parseDivisionOrProvision(el: Element): Division | Provision | null {
+function parseDivisionOrProvision(el: Element): (Division | Provision)[] | null {
   const name = el.localName;
 
   if (name in DIVISION_TAGS) {
-    return parseDivision(el, DIVISION_TAGS[name]);
+    return [parseDivision(el, DIVISION_TAGS[name])];
   }
   if (name === 'P1group') {
     return parseP1group(el);
   }
   if (name === 'P1') {
-    return parseProvision(el);
+    return [parseProvision(el)];
   }
   return null;
 }
@@ -178,7 +178,7 @@ function collectDivisionChildren(el: Element, out: (Division | Provision)[]): vo
   // Try structural parse first
   const structural = parseDivisionOrProvision(el);
   if (structural) {
-    out.push(structural);
+    out.push(...structural);
     return;
   }
 
@@ -197,21 +197,48 @@ function collectDivisionChildren(el: Element, out: (Division | Provision)[]): vo
   }
 }
 
-// --- P1group → Provision with title ---
+// --- P1group → Provision(s) with title on first ---
 
-function parseP1group(el: Element): Provision {
+function parseP1group(el: Element): Provision[] {
   let groupTitle = '';
-  let p1El: Element | null = null;
+  const provisions: Provision[] = [];
 
   for (const child of childElements(el)) {
     if (child.localName === 'Title') {
       groupTitle = textContent(child);
     } else if (child.localName === 'P1') {
-      p1El = child;
+      const title = provisions.length === 0 ? (groupTitle || undefined) : undefined;
+      provisions.push(parseProvision(child, title));
+    } else if (child.localName === 'P') {
+      const title = provisions.length === 0 ? (groupTitle || undefined) : undefined;
+      provisions.push(parseUnnumberedProvision(child, title));
     }
   }
 
-  return parseProvision(p1El ?? el, groupTitle || undefined);
+  if (provisions.length === 0) {
+    return [parseProvision(el, groupTitle || undefined)];
+  }
+
+  return provisions;
+}
+
+// --- Unnumbered provision (P) ---
+
+/** Parse a <P> element as a numberless Provision. */
+function parseUnnumberedProvision(el: Element, title?: string): Provision {
+  // <P> has inline content directly (no P1para wrapper).
+  // Pass the element itself as the "para" container.
+  return buildLeafOrBranch(
+    [el],
+    (child) => parseSubOrParagraph(child),
+    (blocks) => ({ type: 'subProvision', number: '', variant: 'leaf', content: blocks }) as SubProvision,
+    (variant) => {
+      if (variant.kind === 'leaf') {
+        return { type: 'provision', number: '', title, variant: 'leaf', content: variant.blocks } as Provision;
+      }
+      return { type: 'provision', number: '', title, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Provision;
+    },
+  );
 }
 
 // --- Provision (P1) ---
@@ -447,7 +474,7 @@ function parseScheduleBody(el: Element, body: (Division | Provision | Block)[]):
   for (const child of childElements(el)) {
     const structural = parseDivisionOrProvision(child);
     if (structural) {
-      body.push(structural);
+      body.push(...structural);
       continue;
     }
     const blocks = parseBlockElement(child);
@@ -635,7 +662,7 @@ function parseBlockAmendment(el: Element): BlockAmendment {
     // Try structural parse first
     const structural = parseDivisionOrProvision(child);
     if (structural) {
-      children.push(structural);
+      children.push(...structural);
       continue;
     }
     // Fall back to block parse

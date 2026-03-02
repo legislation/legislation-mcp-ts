@@ -220,6 +220,46 @@ test('P1group with Article', () => {
   assert.ok(result.includes('Article 1) **Scope**'), 'Should use Article format, not Section');
 });
 
+test('P1group with multiple P1 children preserves all provisions', () => {
+  const xml = `
+    <P1group>
+      <Title>Offences</Title>
+      <P1 id="section-1">
+        <Pnumber>1</Pnumber>
+        <P1para>
+          <Text>First offence.</Text>
+        </P1para>
+      </P1>
+      <P1 id="section-2">
+        <Pnumber>2</Pnumber>
+        <P1para>
+          <Text>Second offence.</Text>
+        </P1para>
+      </P1>
+    </P1group>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('Section 1) **Offences**'), 'First P1 should get the group title');
+  assert.ok(result.includes('2) Second offence.'), 'Second P1 should be preserved');
+  assert.ok(!result.includes('2) **'), 'Second P1 should have no title');
+});
+
+test('P1group with unnumbered P element', () => {
+  const xml = `
+    <P1group>
+      <Title>Interpretation</Title>
+      <P>
+        <Text>In this Act, unless the context otherwise requires—</Text>
+      </P>
+    </P1group>`;
+
+  const result = parseToText(xml);
+
+  assert.ok(result.includes('**Interpretation**'), 'Should capture P1group title');
+  assert.ok(result.includes('unless the context otherwise requires'), 'Should capture P content');
+});
+
 test('Pblock with title', () => {
   const xml = `
     <Pblock>
