@@ -86,10 +86,9 @@ function serializeProvision(prov: Provision, indent: number): string {
   let result = '';
 
   if (prov.title) {
-    const prefix = prov.number.includes('Article') ? '' : 'Section ';
-    result += `\n${prefix}${prov.number}) **${prov.title}**\n`;
+    result += `\n${prov.number} **${prov.title}**\n`;
   } else if (prov.number) {
-    result += `\n${'\t'.repeat(indent)}${prov.number}) `;
+    result += `\n${'\t'.repeat(indent)}${prov.number} `;
   }
 
   if (prov.variant === 'leaf') {
@@ -118,7 +117,7 @@ function serializeProvisionChildren(children: (SubProvision | Paragraph)[], inde
 function serializeSubProvision(sub: SubProvision, indent: number): string {
   let result = '';
   if (sub.number) {
-    result += `${'\t'.repeat(indent)}${sub.number}) `;
+    result += `${'\t'.repeat(indent)}${sub.number} `;
   }
 
   if (sub.variant === 'leaf') {
@@ -137,7 +136,7 @@ function serializeSubProvision(sub: SubProvision, indent: number): string {
 function serializeParagraph(para: Paragraph, indent: number): string {
   let result = '';
   if (para.number) {
-    result += `${'\t'.repeat(indent)}${para.number}) `;
+    result += `${'\t'.repeat(indent)}${para.number} `;
   }
 
   if (para.variant === 'leaf') {

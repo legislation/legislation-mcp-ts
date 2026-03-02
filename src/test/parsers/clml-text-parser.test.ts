@@ -24,7 +24,7 @@ test('simple section', () => {
 
   const result = parseToText(xml);
 
-  assert.strictEqual(result, '1) A person is guilty of theft if he dishonestly appropriates property.');
+  assert.strictEqual(result, '1. A person is guilty of theft if he dishonestly appropriates property.');
 });
 
 test('section with subsections', () => {
@@ -50,9 +50,9 @@ test('section with subsections', () => {
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('2) It is immaterial'), 'Should include section number and text');
-  assert.ok(result.includes('1) First subsection'), 'Should include first subsection');
-  assert.ok(result.includes('2) Second subsection'), 'Should include second subsection');
+  assert.ok(result.includes('2. It is immaterial'), 'Should include section number and text');
+  assert.ok(result.includes('(1) First subsection'), 'Should include first subsection');
+  assert.ok(result.includes('(2) Second subsection'), 'Should include second subsection');
 });
 
 test('deeply nested provisions (P3, P4)', () => {
@@ -79,8 +79,8 @@ test('deeply nested provisions (P3, P4)', () => {
   const result = parseToText(xml);
 
   // P3 should have indent level 1, P4 indent level 2
-  assert.ok(result.includes('\ta) Paragraph a text.'), 'P3 should be indented once');
-  assert.ok(result.includes('\t\ti) Sub-paragraph i text.'), 'P4 should be indented twice');
+  assert.ok(result.includes('\t(a) Paragraph a text.'), 'P3 should be indented once');
+  assert.ok(result.includes('\t\t(i) Sub-paragraph i text.'), 'P4 should be indented twice');
 });
 
 test('Part with Number and Title', () => {
@@ -100,7 +100,7 @@ test('Part with Number and Title', () => {
 
   assert.ok(result.includes('## Part 1'), 'Should include Part number as heading');
   assert.ok(result.includes('## Preliminary'), 'Should include Part title as heading');
-  assert.ok(result.includes('1) Overview'), 'Should include section content');
+  assert.ok(result.includes('1. Overview'), 'Should include section content');
 });
 
 test('Chapter with Number and Title', () => {
@@ -120,7 +120,7 @@ test('Chapter with Number and Title', () => {
 
   assert.ok(result.includes('### Chapter 2'), 'Should include Chapter number as h3');
   assert.ok(result.includes('### Interpretation'), 'Should include Chapter title as h3');
-  assert.ok(result.includes('5) In this Act'), 'Should include section content');
+  assert.ok(result.includes('5. In this Act'), 'Should include section content');
 });
 
 test('PsubBlock with title', () => {
@@ -138,7 +138,7 @@ test('PsubBlock with title', () => {
   const result = parseToText(xml);
 
   assert.ok(result.includes('##### Minor offences'), 'Should format PsubBlock title as h5');
-  assert.ok(result.includes('1) Content here.'), 'Should include section content');
+  assert.ok(result.includes('1. Content here.'), 'Should include section content');
 });
 
 test('PrimaryPrelims', () => {
@@ -196,10 +196,10 @@ test('P1group with title', () => {
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('Section 1) **Basic definition of theft**'), 'Should format P1group heading');
+  assert.ok(result.includes('1. **Basic definition of theft**'), 'Should format P1group heading');
   assert.ok(result.includes('A person is guilty'), 'Should include section text');
   // The Pnumber "1" should NOT appear separately since it was used in the heading
-  const pnumberMatches = result.match(/\b1\)/g);
+  const pnumberMatches = result.match(/\b1\./g);
   assert.strictEqual(pnumberMatches?.length, 1, 'Pnumber should appear only once (in heading)');
 });
 
@@ -217,7 +217,7 @@ test('P1group with Article', () => {
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('Article 1) **Scope**'), 'Should use Article format, not Section');
+  assert.ok(result.includes('Article 1. **Scope**'), 'Should use Article format, not Section');
 });
 
 test('P1group with multiple P1 children preserves all provisions', () => {
@@ -240,9 +240,9 @@ test('P1group with multiple P1 children preserves all provisions', () => {
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('Section 1) **Offences**'), 'First P1 should get the group title');
-  assert.ok(result.includes('2) Second offence.'), 'Second P1 should be preserved');
-  assert.ok(!result.includes('2) **'), 'Second P1 should have no title');
+  assert.ok(result.includes('1. **Offences**'), 'First P1 should get the group title');
+  assert.ok(result.includes('2. Second offence.'), 'Second P1 should be preserved');
+  assert.ok(!result.includes('2. **'), 'Second P1 should have no title');
 });
 
 test('P1group with unnumbered P element', () => {
@@ -275,7 +275,7 @@ test('Pblock with title', () => {
   const result = parseToText(xml);
 
   assert.ok(result.includes('#### General provisions'), 'Should format Pblock title as h4');
-  assert.ok(result.includes('1) Content'), 'Should include section content');
+  assert.ok(result.includes('1. Content'), 'Should include section content');
 });
 
 test('Schedule with title block', () => {
@@ -301,7 +301,7 @@ test('Schedule with title block', () => {
   assert.ok(result.includes('## Schedule 1'), 'Should format schedule number');
   assert.ok(result.includes('## Powers of Attorney'), 'Should format schedule title');
   assert.ok(result.includes('Section 5'), 'Should include reference');
-  assert.ok(result.includes('1) Schedule paragraph text.'), 'Should include schedule body content');
+  assert.ok(result.includes('1. Schedule paragraph text.'), 'Should include schedule body content');
 });
 
 test('table with header and rows', () => {
@@ -409,7 +409,7 @@ test('full document structure', () => {
   assert.ok(result.includes('## Part 1'), 'Should include Part number');
   assert.ok(result.includes('## Introduction'), 'Should include Part title');
   // Should have section
-  assert.ok(result.includes('Section 1) **Overview**'), 'Should include P1group heading');
+  assert.ok(result.includes('1. **Overview**'), 'Should include P1group heading');
   assert.ok(result.includes('This Act makes provision'), 'Should include section text');
   // Should NOT include metadata content
   assert.ok(!result.includes('dc:title'), 'Should not include metadata tags');
@@ -471,7 +471,7 @@ test('BlockAmendment indentation', () => {
   const result = parseToText(xml);
 
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('5) Replacement text here.'), 'Should include amendment content');
+  assert.ok(result.includes('5. Replacement text here.'), 'Should include amendment content');
 });
 
 test('Schedules wrapper with Title (title dropped)', () => {
@@ -540,7 +540,7 @@ test('Contents element is skipped', () => {
   const result = parseToText(xml);
 
   assert.ok(!result.includes('Table of Contents'), 'Should not include Contents');
-  assert.ok(result.includes('1) Actual content.'), 'Should include body content');
+  assert.ok(result.includes('1. Actual content.'), 'Should include body content');
 });
 
 test('Footnote elements with newline separation', () => {
@@ -618,7 +618,7 @@ test('BlockAmendment is indented at top level', () => {
   const result = parseToText(xml);
 
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('\t5) New section five text.'), 'Block amendment should be indented');
+  assert.ok(result.includes('\t5. New section five text.'), 'Block amendment should be indented');
 });
 
 test('parser returns Document type', () => {
@@ -734,9 +734,8 @@ test('fragment: parses only the target section, skipping ancestor headings', () 
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('Section 1) **Overview**'), 'Should capture P1group title when id is on P1');
+  assert.ok(result.includes('1. **Overview**'), 'Should capture P1group title when id is on P1');
   assert.ok(result.includes('This Act makes provision about examples.'), 'Should include section text');
-  assert.ok(!result.startsWith('1)'), 'Should NOT render as bare provision without title');
   assert.ok(!result.includes('## Part 1'), 'Should NOT include ancestor Part heading');
   assert.ok(!result.includes('## Introduction'), 'Should NOT include ancestor Part title');
 });
@@ -772,7 +771,7 @@ test('fragment: full document with no fragment parses from root', () => {
 
   assert.ok(result.includes('## Part 1'), 'Should include Part heading for full document');
   assert.ok(result.includes('## Introduction'), 'Should include Part title for full document');
-  assert.ok(result.includes('Section 1) **Overview**'), 'Should include section');
+  assert.ok(result.includes('1. **Overview**'), 'Should include section');
 });
 
 test('fragment: uses first dc:identifier when multiple exist', () => {
@@ -805,7 +804,7 @@ test('fragment: uses first dc:identifier when multiple exist', () => {
 
   const result = parseToText(xml);
 
-  assert.ok(result.includes('Section 2) **Definitions**'), 'Should use first dc:identifier (section/2)');
+  assert.ok(result.includes('2. **Definitions**'), 'Should use first dc:identifier (section/2)');
   assert.ok(!result.includes('## Part 1'), 'Should NOT include ancestor Part heading');
 });
 
@@ -840,7 +839,7 @@ test('fragment: falls back to root when target ID not found', () => {
 
   // Should gracefully fall back to parsing the full document
   assert.ok(result.includes('## Part 1'), 'Should include Part heading (fallback to root)');
-  assert.ok(result.includes('Section 1) **Overview**'), 'Should include section content');
+  assert.ok(result.includes('1. **Overview**'), 'Should include section content');
 });
 
 // --- Data preservation tests ---
@@ -852,12 +851,12 @@ test('interstitial text between nested provisions is preserved', () => {
       <P1para>
         <Text>A person commits an offence if—</Text>
         <P2>
-          <Pnumber>(a)</Pnumber>
+          <Pnumber>a</Pnumber>
           <P2para><Text>condition one,</Text></P2para>
         </P2>
         <Text>or</Text>
         <P2>
-          <Pnumber>(b)</Pnumber>
+          <Pnumber>b</Pnumber>
           <P2para><Text>condition two.</Text></P2para>
         </P2>
       </P1para>
@@ -878,15 +877,15 @@ test('P2group with multiple P2 children preserves all siblings', () => {
         <Text>A person commits an offence if—</Text>
         <P2group>
           <P2>
-            <Pnumber>(a)</Pnumber>
+            <Pnumber>a</Pnumber>
             <P2para><Text>condition one,</Text></P2para>
           </P2>
           <P2>
-            <Pnumber>(b)</Pnumber>
+            <Pnumber>b</Pnumber>
             <P2para><Text>condition two, or</Text></P2para>
           </P2>
           <P2>
-            <Pnumber>(c)</Pnumber>
+            <Pnumber>c</Pnumber>
             <P2para><Text>condition three.</Text></P2para>
           </P2>
         </P2group>
@@ -915,7 +914,7 @@ test('non-structural content inside a division is preserved', () => {
   const result = parseToText(xml);
 
   assert.ok(result.includes('## Part 1'), 'Should include Part heading');
-  assert.ok(result.includes('1) Overview'), 'Should include provision');
+  assert.ok(result.includes('1. Overview'), 'Should include provision');
   assert.ok(result.includes('This Part sets out general provisions.'),
     'Non-structural text inside a division must not be dropped');
 });

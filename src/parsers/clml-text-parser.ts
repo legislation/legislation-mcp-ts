@@ -243,13 +243,7 @@ function parseUnnumberedProvision(el: Element, title?: string): Provision {
 // --- Provision (P1) ---
 
 function parseProvision(el: Element, title?: string): Provision {
-  let number = '';
-
-  for (const child of childElements(el)) {
-    if (child.localName === 'Pnumber') {
-      number = textContent(child);
-    }
-  }
+  const number = extractPnumber(el, 1);
 
   return buildLeafOrBranch(
     flattenProvisionContent(el, 'P1para'),
@@ -266,14 +260,8 @@ function parseProvision(el: Element, title?: string): Provision {
 
 /** Parse a standalone P2+ fragment as a Provision (for fragment root elements). */
 function parseProvisionAtAnyLevel(el: Element, level: number): Provision {
-  let number = '';
+  const number = extractPnumber(el, level);
   const paraTag = `P${level}para`;
-
-  for (const child of childElements(el)) {
-    if (child.localName === 'Pnumber') {
-      number = textContent(child);
-    }
-  }
 
   const childParser = level <= 2
     ? (child: Element) => parseSubOrParagraph(child)
@@ -295,13 +283,7 @@ function parseProvisionAtAnyLevel(el: Element, level: number): Provision {
 // --- SubProvision (P2) ---
 
 function parseSubProvision(el: Element): SubProvision {
-  let number = '';
-
-  for (const child of childElements(el)) {
-    if (child.localName === 'Pnumber') {
-      number = textContent(child);
-    }
-  }
+  const number = extractPnumber(el, 2);
 
   return buildLeafOrBranch(
     flattenProvisionContent(el, 'P2para'),
@@ -319,13 +301,8 @@ function parseSubProvision(el: Element): SubProvision {
 // --- Paragraph (P3, P4, P5, ...) ---
 
 function parseParagraphAtLevel(el: Element, level: number): Paragraph {
-  let number = '';
+  const number = extractPnumber(el, level);
   const paraTag = `P${level}para`;
-  for (const child of childElements(el)) {
-    if (child.localName === 'Pnumber') {
-      number = textContent(child);
-    }
-  }
 
   const childLevel = level + 1;
   const childTag = `P${childLevel}`;
@@ -740,6 +717,32 @@ function findElementById(node: Element, id: string): Element | null {
 
 function textContent(element: Element): string {
   return (element.textContent || '').trim();
+}
+
+/**
+ * Format a Pnumber element's text with punctuation.
+ * Uses PuncBefore/PuncAfter attributes if present; otherwise applies defaults:
+ *   P1: "1."   (period after)
+ *   P2+: "(1)" (parentheses around)
+ */
+function formatPnumber(el: Element, level: number): string {
+  const text = textContent(el);
+  const hasPunc = el.hasAttribute('PuncBefore') || el.hasAttribute('PuncAfter');
+  if (hasPunc) {
+    const before = el.getAttribute('PuncBefore') ?? '';
+    const after = el.getAttribute('PuncAfter') ?? '';
+    return `${before}${text}${after}`;
+  }
+  if (level === 1) return `${text}.`;
+  return `(${text})`;
+}
+
+/** Find the Pnumber child of an element and format it with punctuation. */
+function extractPnumber(el: Element, level: number): string {
+  for (const child of childElements(el)) {
+    if (child.localName === 'Pnumber') return formatPnumber(child, level);
+  }
+  return '';
 }
 
 /** Extract all text from an element, collapsing whitespace. */
