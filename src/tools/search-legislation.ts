@@ -11,20 +11,20 @@ export const name = "search_legislation";
 
 export const description = `Search for UK legislation by keyword, title, or other criteria on legislation.gov.uk. Returns JSON by default (set \`format="xml"\` for raw Atom feed).
 
-Results include: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, and \`date\`. Use \`title\` for title search, \`text\` for full-text search. Filter by \`type\`, \`year\`, or \`startYear\`/\`endYear\` range. Returns 20 results per page — use \`page\` to paginate; check \`meta.morePages\` in the response.
+Results include: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, and \`date\`. Use \`q\` for full-text keyword search, \`title\` for title search. Filter by \`type\`, \`year\`, or \`startYear\`/\`endYear\` range. Returns 20 results per page — use \`page\` to paginate; check \`meta.morePages\` in the response.
 
 See: \`types://guide\`, \`json://search-response\`, \`atom://feed-guide\``;
 
 export const inputSchema = {
   type: "object",
   properties: {
+    q: {
+      type: "string",
+      description: "Full-text keyword search across legislation content",
+    },
     title: {
       type: "string",
       description: "Search in legislation titles",
-    },
-    text: {
-      type: "string",
-      description: "Full-text search across legislation content",
     },
     type: {
       type: "string",
@@ -56,8 +56,8 @@ export const inputSchema = {
 
 export async function execute(
   args: {
+    q?: string;
     title?: string;
-    text?: string;
     type?: string;
     year?: string;
     startYear?: string;
@@ -67,7 +67,8 @@ export async function execute(
   },
   client: LegislationClient
 ): Promise<any> {
-  const { format = "json", ...searchParams } = args;
+  const { q, format = "json", ...rest } = args;
+  const searchParams = { ...rest, ...(q ? { text: q } : {}) };
 
   try {
     const results = await client.search(searchParams);

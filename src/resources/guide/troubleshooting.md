@@ -119,9 +119,9 @@ Error: Failed to fetch legislation: 404 Not Found
   "title": "Data Protection"
 }
 
-// Or use text search
+// Or use keyword search
 {
-  "text": "data protection"
+  "q": "data protection"
 }
 ```
 
