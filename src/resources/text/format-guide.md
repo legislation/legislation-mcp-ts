@@ -22,12 +22,10 @@ An Act to make provision...            (long title / purpose)
 
 ##### Sub cross-heading                (lower-level grouping, from PsubBlock)
 
-Section 1) **Section Title**           (from P1group)
-1) Section text...                     (provisions)
-  a) Subsection text...                (nested provisions, indented)
-    i) Paragraph text...               (deeper nesting)
-
-## SCHEDULES                           (schedules wrapper heading)
+1. **Section Title**                   (from P1group)
+(1) Section text...                    (subsections)
+  (a) Paragraph text...                (nested provisions, indented)
+    (i) Sub-paragraph text...          (deeper nesting)
 
 ## Schedule 1                          (individual schedule)
 ## Schedule Title
@@ -69,34 +67,34 @@ THE EUROPEAN PARLIAMENT AND...         (preamble)
 | Markdown | CLML Source | Purpose |
 |----------|------------|---------|
 | `#` | PrimaryPrelims / SecondaryPrelims / EUPrelims Title | Act, instrument, or regulation title |
-| `##` | Part, Schedule, Schedules | Major structural divisions |
+| `##` | Part, Schedule | Major structural divisions |
 | `###` | Chapter | Subdivision within a Part |
 | `####` | Pblock | Cross-heading (groups related sections) |
 | `#####` | PsubBlock | Sub cross-heading |
 
 ## Provisions and Numbering
 
-Sections and subsections use a `number) text` pattern with tab indentation for nesting:
+Sections and subsections use tab indentation for nesting. Punctuation comes from the source XML: P1 numbers default to a trailing period (`1.`), P2+ default to parentheses (`(1)`, `(a)`, `(i)`), but explicit `PuncBefore`/`PuncAfter` attributes override these defaults.
 
 ```
-Section 5) **Power to make regulations**
-1) The Secretary of State may by regulations—
-  a) make provision about—
-    i) the first matter, and
-    ii) the second matter;
-  b) amend other legislation.
-2) Regulations under subsection (1) are subject to affirmative procedure.
+5. **Power to make regulations**
+(1) The Secretary of State may by regulations—
+  (a) make provision about—
+    (i) the first matter, and
+    (ii) the second matter;
+  (b) amend other legislation.
+(2) Regulations under subsection (1) are subject to affirmative procedure.
 ```
 
-- **P1** (sections): no indentation, number followed by `) `
+- **P1** (sections): no indentation
 - **P2** (subsections): no indentation (same as P1)
 - **P3** (paragraphs): one tab indent
 - **P4** (sub-paragraphs): two tab indents
 - **P5+**: additional tab per level
 
 When a section has a title (via P1group), it appears as:
-- `Section 1) **Title**` for numbered sections
-- `Article 1) **Title**` for articles (EU-derived legislation)
+- `1. **Title**` for numbered sections
+- `Article 1. **Title**` for articles (EU-derived legislation)
 
 ## Lists
 
