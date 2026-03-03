@@ -89,7 +89,7 @@ export class LegislationClient {
     const { format = "xml", version } = options;
 
     const versionPath = version ? `/${version}` : "";
-    const url = `${this.baseUrl}/${type}/${year}/${number}${versionPath}/${fragmentId}/data.${format}`;
+    const url = `${this.baseUrl}/${type}/${year}/${number}/${fragmentId}${versionPath}/data.${format}`;
 
     return this.fetchDocument(url);
   }
