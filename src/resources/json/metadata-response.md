@@ -69,6 +69,30 @@ These fields reflect the version and language of the response, when the request 
   - Values: `"english"`, `"welsh"`
   - Present when a specific language was requested
 
+### Up-to-Date Status
+
+- **upToDate** (boolean, optional) - Whether the legislation text is current
+  - `true` = all in-force effects have been applied; the text is up to date
+  - `false` = some effects are outstanding (enacted and in force but not yet applied)
+  - Only present when no `version` parameter was specified (i.e. the latest version)
+
+### Unapplied Effects
+
+- **unappliedEffects** (array, optional) - Amendments enacted but not yet applied to the text
+  - Each effect has:
+    - **type** (string) - e.g. `"substituted"`, `"words repealed"`, `"inserted"`
+    - **applied** (boolean) - Whether this effect has been applied
+    - **required** (boolean) - Whether application is required
+    - **outstanding** (boolean) - Whether the effect should have been applied but wasn't (required, not applied, and in force on or before today)
+    - **notes** (string, optional) - Editorial notes
+    - **target** (object) - The affected legislation (`id`, `type`, `year`, `number`, `title`, `provisions`, `extent`)
+    - **source** (object) - The affecting legislation (same shape as target)
+    - **commencement** (string, optional) - Commencement authority provisions
+    - **inForce** (array) - In-force dates, each with:
+      - **date** (string, optional) - ISO date when the effect comes into force
+      - **description** (string, optional) - e.g. `"wholly in force"`
+  - An effect is **outstanding** if it is not applied, is required, and has at least one in-force date on or before today
+
 ### Additional Metadata
 
 - **isbn** (string, optional) - ISBN for published version
@@ -86,7 +110,8 @@ These fields reflect the version and language of the response, when the request 
   "title": "Direct Payments to Farmers (Legislative Continuity) Act 2020",
   "status": "revised",
   "extent": ["E", "W", "S", "NI"],
-  "enactmentDate": "2020-01-30"
+  "enactmentDate": "2020-01-30",
+  "upToDate": true
 }
 ```
 
@@ -132,7 +157,20 @@ get_legislation_metadata(type="ukpga", year="2021", number="24", version="2023-0
 
 // Get original enacted version
 get_legislation_metadata(type="ukpga", year="2021", number="24", version="enacted")
+
+// Get metadata for a specific fragment (Part, Chapter, section, etc.)
+get_legislation_metadata(type="ukpga", year="2010", number="15", fragment="part/2/chapter/1")
 ```
+
+## Fragment-Level Metadata
+
+When a `fragment` parameter is provided (e.g. `"section/12"`, `"part/2/chapter/1"`), the metadata is scoped to that provision:
+
+- **`unappliedEffects`** includes only effects targeting the fragment and its ancestors
+- **`upToDate`** reflects whether that specific fragment is current
+- All other fields (`id`, `title`, `status`, etc.) still describe the parent document
+
+Use `get_legislation_table_of_contents` to discover valid fragment identifiers.
 
 ## Related Resources
 

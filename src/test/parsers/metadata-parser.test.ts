@@ -88,3 +88,64 @@ test('MetadataParser strips id prefix correctly', () => {
   result = parser.parse(idXml);
   assert.strictEqual(result.id, 'ukpga/2020/2', 'Should strip http://www.legislation.gov.uk/id/ prefix');
 });
+
+const XML_WITH_EFFECTS = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation" DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+            <ukm:UnappliedEffects>
+                <ukm:UnappliedEffect Type="substituted" AffectedURI="http://www.legislation.gov.uk/ukpga/2020/2" AffectedClass="UnitedKingdomPublicGeneralAct" AffectedYear="2020" AffectedNumber="2" AffectedProvisions="s. 1" AffectingURI="http://www.legislation.gov.uk/ukpga/2024/1" AffectingClass="UnitedKingdomPublicGeneralAct" AffectingYear="2024" AffectingNumber="1" AffectingProvisions="s. 10" Applied="false" RequiresApplied="true">
+                    <ukm:AffectedTitle>Act 2020</ukm:AffectedTitle>
+                    <ukm:AffectingTitle>Act 2024</ukm:AffectingTitle>
+                    <ukm:InForceDates>
+                        <ukm:InForce Date="2020-01-01" Applied="false"/>
+                    </ukm:InForceDates>
+                </ukm:UnappliedEffect>
+                <ukm:UnappliedEffect Type="repealed" AffectedURI="http://www.legislation.gov.uk/ukpga/2020/2" AffectedClass="UnitedKingdomPublicGeneralAct" AffectedYear="2020" AffectedNumber="2" AffectedProvisions="s. 2" AffectingURI="http://www.legislation.gov.uk/ukpga/2024/1" AffectingClass="UnitedKingdomPublicGeneralAct" AffectingYear="2024" AffectingNumber="1" AffectingProvisions="s. 11" Applied="false" RequiresApplied="true">
+                    <ukm:AffectedTitle>Act 2020</ukm:AffectedTitle>
+                    <ukm:AffectingTitle>Act 2024</ukm:AffectingTitle>
+                    <ukm:InForceDates>
+                        <ukm:InForce Applied="false" Prospective="true"/>
+                    </ukm:InForceDates>
+                </ukm:UnappliedEffect>
+            </ukm:UnappliedEffects>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+test('MetadataParser parses unapplied effects and identifies outstanding ones', () => {
+  const parser = new MetadataParser();
+  const result = parser.parse(XML_WITH_EFFECTS);
+
+  assert.strictEqual(result.upToDate, false, 'Should not be up to date because of outstanding effect');
+  assert.strictEqual(result.unappliedEffects?.length, 2, 'Should have 2 unapplied effects');
+
+  const outstanding = result.unappliedEffects?.[0];
+  assert.strictEqual(outstanding?.type, 'substituted');
+  assert.strictEqual(outstanding?.outstanding, true, 'First effect should be outstanding (past date)');
+  assert.strictEqual(outstanding?.target.provisions, 's. 1');
+  assert.strictEqual(outstanding?.source.id, 'ukpga/2024/1');
+
+  const prospective = result.unappliedEffects?.[1];
+  assert.strictEqual(prospective?.type, 'repealed');
+  assert.strictEqual(prospective?.outstanding, false, 'Prospective effect should not be outstanding');
+});
+
+test('MetadataParser skips effects for specific versions', () => {
+  const parser = new MetadataParser();
+  const xmlWithVersion = XML_WITH_EFFECTS.replace(
+    'DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2"',
+    'DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2/enacted"'
+  );
+
+  const result = parser.parse(xmlWithVersion);
+  assert.strictEqual(result.version, 'enacted');
+  assert.strictEqual(result.unappliedEffects, undefined, 'Should skip effects for non-latest version');
+  assert.strictEqual(result.upToDate, undefined, 'Should not report upToDate for non-latest version');
+});

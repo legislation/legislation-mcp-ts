@@ -20,6 +20,22 @@ Learn how to determine which jurisdictions (England, Wales, Scotland, Northern I
 
 ---
 
+### `cookbook://check-outstanding-effects`
+**Check Outstanding Effects**
+
+Determine whether legislation is up to date, and if not, identify which amendments are outstanding.
+
+**What you'll learn:**
+- Using `upToDate` to check if legislation text is current
+- Filtering `unappliedEffects` for outstanding amendments
+- Understanding the difference between unapplied and outstanding
+
+**Use cases:**
+- "Is this Act up to date?"
+- "What amendments haven't been applied yet?"
+
+---
+
 ### `cookbook://point-in-time-version`
 **Point‑in‑Time Retrieval (Versioning)**
 
