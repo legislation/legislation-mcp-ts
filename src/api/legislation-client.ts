@@ -144,6 +144,39 @@ export class LegislationClient {
   }
 
   /**
+   * Search for legislative effects (changes) by affecting and/or affected legislation
+   * Returns Atom feed (XML format)
+   */
+  async searchChanges(params: {
+    affectingType?: string;
+    affectingYear?: string;
+    affectingNumber?: string;
+    affectedType?: string;
+    affectedYear?: string;
+    affectedNumber?: string;
+    page?: number;
+  }): Promise<string> {
+    const queryParams = new URLSearchParams();
+    if (params.affectedType) queryParams.append("affected-type", params.affectedType);
+    if (params.affectedYear) {
+      queryParams.append("affected-year-choice", "specific");
+      queryParams.append("affected-year", params.affectedYear);
+    }
+    if (params.affectedNumber) queryParams.append("affected-number", params.affectedNumber);
+    if (params.affectingType) queryParams.append("affecting-type", params.affectingType);
+    if (params.affectingYear) {
+      queryParams.append("affecting-year-choice", "specific");
+      queryParams.append("affecting-year", params.affectingYear);
+    }
+    if (params.affectingNumber) queryParams.append("affecting-number", params.affectingNumber);
+    if (params.page && params.page > 1) queryParams.append("page", String(params.page));
+
+    const url = `${this.baseUrl}/changes/data.feed?${queryParams.toString()}`;
+
+    return this.fetchText(url);
+  }
+
+  /**
    * Fetch helper for document responses that may return HTTP 300 (Multiple Choices)
    * when a calendar year is ambiguous across regnal years.
    */

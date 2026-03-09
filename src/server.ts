@@ -20,6 +20,7 @@ import * as getLegislationTableOfContents from "./tools/get-legislation-table-of
 import * as searchLegislation from "./tools/search-legislation.js";
 import * as searchLegislationSemantic from "./tools/search-legislation-semantic.js";
 import * as searchLegislationSectionsSemantic from "./tools/search-legislation-sections-semantic.js";
+import * as searchEffects from "./tools/search-effects.js";
 import * as getResource from "./tools/get-resource.js";
 
 // Import API clients
@@ -91,6 +92,12 @@ export function createServer(): Server {
           inputSchema: searchLegislationSectionsSemantic.inputSchema,
         },
         {
+          name: searchEffects.name,
+          description: searchEffects.description,
+          inputSchema: searchEffects.inputSchema,
+          outputSchema: searchEffects.outputSchema,
+        },
+        {
           name: getResource.name,
           description: getResource.description,
           inputSchema: getResource.inputSchema,
@@ -125,6 +132,9 @@ export function createServer(): Server {
 
         case searchLegislationSectionsSemantic.name:
           return await searchLegislationSectionsSemantic.execute(args as any, lexClient);
+
+        case searchEffects.name:
+          return await searchEffects.execute(args as any, apiClient);
 
         case getResource.name:
           return await getResource.execute(args as any, resourceLoader);

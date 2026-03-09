@@ -7,21 +7,7 @@
 
 import { XMLParser } from 'fast-xml-parser';
 import { parseLegislationUri } from '../utils/legislation-uri.js';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-// Load types data for longName -> shortCode mapping
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const typesDataPath = join(__dirname, '..', 'resources', 'types', 'data.json');
-const typesData = JSON.parse(readFileSync(typesDataPath, 'utf-8'));
-
-// Build lookup map: longName -> shortCode
-const longToShortTypeMap = new Map<string, string>();
-for (const type of typesData.types) {
-  longToShortTypeMap.set(type.longName, type.shortCode);
-}
+import { longToShortTypeMap } from '../utils/type-codes.js';
 
 /**
  * Structured metadata extracted from legislation
@@ -62,7 +48,9 @@ export interface UnappliedEffect {
   type: string;                  // e.g. "substituted", "words repealed"
   applied: boolean;
   required: boolean;             // XML: RequiresApplied
-  outstanding: boolean;          // required, not applied, and in force on or before today
+  appliedWelsh?: boolean;
+  requiredWelsh?: boolean;       // XML: RequiresWelshApplied
+  outstanding?: boolean;         // required, not applied, and in force on or before today (only for document metadata)
   notes?: string;
   target: EffectSource;          // affected legislation
   source: EffectSource;          // affecting legislation
@@ -246,23 +234,45 @@ export class MetadataParser {
     return effectList.map(e => this.convertEffect(e, welsh, today));
   }
 
-  private convertEffect(e: any, welsh: boolean, today: string): UnappliedEffect {
+  convertEffect(e: any, welsh: boolean | null, today: string): UnappliedEffect {
     const effect: UnappliedEffect = {
       type: e['@_Type'] || '',
       applied: e[welsh ? '@_WelshApplied' : '@_Applied'] === 'true',
       required: e[welsh ? '@_RequiresWelshApplied' : '@_RequiresApplied'] !== 'false',
-      outstanding: false,
+      ...(welsh === null && '@_WelshApplied' in e ? {
+        appliedWelsh: e['@_WelshApplied'] === 'true',
+        requiredWelsh: e['@_RequiresWelshApplied'] !== 'false',
+      } : {}),
       notes: e['@_Notes'] || undefined,
-      target: this.convertSource(e, 'Affected'),
-      source: this.convertSource(e, 'Affecting'),
+      target: this.convertSource(e, 'Affected', welsh),
+      source: this.convertSource(e, 'Affecting', welsh),
       commencement: this.extractCommencementText(e.CommencementAuthority),
       inForce: this.convertInForce(e.InForceDates),
     };
-    effect.outstanding = this.isOutstanding(effect, today);
+    // outstanding only applies in a document context (welsh is boolean);
+    // in a standalone effects search (welsh is null), there is no document to be outstanding against
+    if (welsh !== null) {
+      effect.outstanding = this.isOutstanding(effect, today);
+    }
     return effect;
   }
 
-  private convertSource(e: any, prefix: 'Affected' | 'Affecting'): EffectSource {
+  private extractEffectTitle(title: any, welsh: boolean | null): string {
+    if (Array.isArray(title)) {
+      // Bilingual: pick the title matching the requested language
+      const preferred = welsh
+        ? title.find((t: any) => t['@_lang'] === 'cy')
+        : title.find((t: any) => !t['@_lang']);
+      const value = preferred ?? title[0];
+      return typeof value === 'string' ? value : value?.['#text'] || '';
+    }
+    if (typeof title === 'object' && title !== null) {
+      return title['#text'] || '';
+    }
+    return title || '';
+  }
+
+  private convertSource(e: any, prefix: 'Affected' | 'Affecting', welsh: boolean | null): EffectSource {
     const uri = e[`@_${prefix}URI`] || '';
     const parsed = parseLegislationUri(uri);
     const id = parsed ? `${parsed.type}/${parsed.year}/${parsed.number}` : '';
@@ -277,7 +287,7 @@ export class MetadataParser {
       type,
       year: parseInt(e[`@_${prefix}Year`], 10) || 0,
       number: parseInt(e[`@_${prefix}Number`], 10) || 0,
-      title: e[`${prefix}Title`] || '',
+      title: this.extractEffectTitle(e[`${prefix}Title`], welsh),
       provisions: e[`@_${prefix}Provisions`] || undefined,
       extent,
     };

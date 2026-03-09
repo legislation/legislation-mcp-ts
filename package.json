@@ -30,7 +30,7 @@
   "license": "OGL-UK-3.0",
   "dependencies": {
     "@hono/node-server": "^1.19.9",
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@xmldom/xmldom": "^0.8.11",
     "fast-xml-parser": "^5.3.3",
     "hono": "^4.11.7"

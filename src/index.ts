@@ -30,7 +30,7 @@ async function startStdioServer(): Promise<void> {
   console.error("Tools: search_legislation, get_legislation_metadata, get_legislation,");
   console.error("       get_legislation_fragment, get_legislation_table_of_contents,");
   console.error("       search_legislation_semantic, search_legislation_sections_semantic,");
-  console.error("       get_resource");
+  console.error("       search_effects, get_resource");
   console.error("Resources loaded:");
   for (const resource of resourceLoader.listResources()) {
     console.error(`  - ${resource.uri}`);

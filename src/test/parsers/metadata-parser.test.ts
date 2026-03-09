@@ -137,6 +137,45 @@ test('MetadataParser parses unapplied effects and identifies outstanding ones', 
   assert.strictEqual(prospective?.outstanding, false, 'Prospective effect should not be outstanding');
 });
 
+test('MetadataParser uses Welsh effect titles for Welsh documents', () => {
+  const parser = new MetadataParser();
+  const welshXml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation" DocumentURI="http://www.legislation.gov.uk/asc/2024/6/welsh">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="WelshParliamentAct"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2024"/>
+            <ukm:Number Value="6"/>
+            <ukm:UnappliedEffects>
+                <ukm:UnappliedEffect Type="coming into force" AffectedURI="http://www.legislation.gov.uk/id/asc/2024/6" AffectedClass="WelshParliamentAct" AffectedYear="2024" AffectedNumber="6" AffectedProvisions="s. 18(1)" AffectingURI="http://www.legislation.gov.uk/id/wsi/2026/14" AffectingClass="WelshStatutoryInstrument" AffectingYear="2026" AffectingNumber="14" AffectingProvisions="art. 2" Applied="false" RequiresApplied="true" WelshApplied="false" RequiresWelshApplied="true">
+                    <ukm:AffectedTitle>Local Government Finance (Wales) Act 2024</ukm:AffectedTitle>
+                    <ukm:AffectedTitle xml:lang="cy">Deddf Cyllid Llywodraeth Leol (Cymru) 2024</ukm:AffectedTitle>
+                    <ukm:AffectingTitle>The Commencement Order 2026</ukm:AffectingTitle>
+                    <ukm:AffectingTitle xml:lang="cy">Y Gorchymyn Cychwyn 2026</ukm:AffectingTitle>
+                    <ukm:InForceDates>
+                        <ukm:InForce Applied="false" WelshApplied="false" Date="2026-04-01" Qualification="wholly in force"/>
+                    </ukm:InForceDates>
+                </ukm:UnappliedEffect>
+            </ukm:UnappliedEffects>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(welshXml);
+  assert.strictEqual(result.language, 'welsh');
+
+  const effect = result.unappliedEffects?.[0];
+  assert.strictEqual(effect?.target.title, 'Deddf Cyllid Llywodraeth Leol (Cymru) 2024', 'Should use Welsh target title');
+  assert.strictEqual(effect?.source.title, 'Y Gorchymyn Cychwyn 2026', 'Should use Welsh source title');
+  assert.strictEqual(effect?.applied, false, 'applied should use WelshApplied');
+  assert.strictEqual(effect?.required, true, 'required should use RequiresWelshApplied');
+  assert.strictEqual(effect?.appliedWelsh, undefined, 'appliedWelsh should not be set in document context');
+  assert.strictEqual(effect?.requiredWelsh, undefined, 'requiredWelsh should not be set in document context');
+});
+
 test('MetadataParser skips effects for specific versions', () => {
   const parser = new MetadataParser();
   const xmlWithVersion = XML_WITH_EFFECTS.replace(

@@ -52,6 +52,24 @@ Retrieve legislation as it stood on a specific date, or fetch the original enact
 
 ---
 
+### `cookbook://search-effects`
+**Search Legislative Effects**
+
+Find which legislation a given Act amends, or which Acts amend a given piece of legislation.
+
+**What you'll learn:**
+- Using `search_effects` to query by source or target legislation
+- Understanding effect types, applied status, and in-force dates
+- Paginating through large result sets
+- Combining source and target for precise queries
+
+**Use cases:**
+- "What does this Act amend?"
+- "What amends this Act?"
+- "What changes does Act X make to Act Y?"
+
+---
+
 ### `cookbook://semantic-search-workflow`
 **Semantic Search Workflow (Experimental)**
 

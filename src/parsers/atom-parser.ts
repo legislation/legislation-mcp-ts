@@ -6,21 +6,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-// Load types data for longName -> shortCode mapping
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const typesDataPath = join(__dirname, '..', 'resources', 'types', 'data.json');
-const typesData = JSON.parse(readFileSync(typesDataPath, 'utf-8'));
-
-// Build lookup map: longName -> shortCode
-const longToShortTypeMap = new Map<string, string>();
-for (const type of typesData.types) {
-  longToShortTypeMap.set(type.longName, type.shortCode);
-}
+import { longToShortTypeMap } from '../utils/type-codes.js';
 
 /**
  * A single search result from legislation.gov.uk
@@ -53,6 +39,27 @@ export interface SearchMeta {
 export interface SearchResponse {
   meta: SearchMeta;
   documents: SearchResult[];
+}
+
+/**
+ * Extract pagination metadata from a parsed Atom feed object.
+ * Shared by AtomParser and EffectsParser.
+ */
+export function parseFeedMeta(feed: any): SearchMeta {
+  const parsedTotal = parseInt(feed.totalResults, 10);
+  const totalResults = isNaN(parsedTotal) ? undefined : parsedTotal;
+  const itemsPerPage = parseInt(feed.itemsPerPage, 10) || 20;
+  const startIndex = parseInt(feed.startIndex, 10) || 1;
+  // Prefer leg:page (current page number) over computing from startIndex
+  const page = parseInt(feed.page, 10) || Math.ceil(startIndex / itemsPerPage);
+  // Prefer leg:morePages (remaining page count) over OpenSearch totalResults calculation,
+  // as feeds may omit openSearch:totalResults while still providing leg:morePages
+  const legMorePages = parseInt(feed.morePages, 10);
+  const morePages = isNaN(legMorePages)
+    ? totalResults !== undefined && startIndex + itemsPerPage - 1 < totalResults
+    : legMorePages > 0;
+
+  return { totalResults, page, itemsPerPage, morePages };
 }
 
 export class AtomParser {
@@ -97,21 +104,8 @@ export class AtomParser {
       };
     });
 
-    const parsedTotal = parseInt(feed.totalResults, 10);
-    const totalResults = isNaN(parsedTotal) ? undefined : parsedTotal;
-    const itemsPerPage = parseInt(feed.itemsPerPage, 10) || 20;
-    const startIndex = parseInt(feed.startIndex, 10) || 1;
-    // Prefer leg:page (current page number) over computing from startIndex
-    const page = parseInt(feed.page, 10) || Math.ceil(startIndex / itemsPerPage);
-    // Prefer leg:morePages (remaining page count) over OpenSearch totalResults calculation,
-    // as feeds may omit openSearch:totalResults while still providing leg:morePages
-    const legMorePages = parseInt(feed.morePages, 10);
-    const morePages = isNaN(legMorePages)
-      ? totalResults !== undefined && startIndex + itemsPerPage - 1 < totalResults
-      : legMorePages > 0;
-
     return {
-      meta: { totalResults, page, itemsPerPage, morePages },
+      meta: parseFeedMeta(feed),
       documents
     };
   }
