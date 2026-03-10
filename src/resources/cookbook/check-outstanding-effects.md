@@ -149,7 +149,7 @@ You can scope the check to a specific fragment (Part, Chapter, section, etc.) us
 }
 ```
 
-The response has the same structure as a whole-document request, but `upToDate` and `unappliedEffects` are scoped to the fragment.
+The response has the same structure as a whole-document request. For revised legislation, `upToDate` and `unappliedEffects` are scoped to the fragment. For enacted/made legislation (status `"final"`), these fields are omitted — fragment-level enrichment is not yet implemented.
 
 Use `get_legislation_table_of_contents` to discover valid fragment identifiers.
 

@@ -31,9 +31,14 @@ export class EffectsParser {
   }
 
   /**
-   * Parse effects feed XML into structured response
+   * Parse effects feed XML into structured response.
+   *
+   * @param welsh - Language context: `null` (default) for standalone search results
+   *   (includes both English and Welsh applied/required fields, no `outstanding`);
+   *   `false` for English document context; `true` for Welsh document context
+   *   (sets `outstanding` using the appropriate language's applied/required fields).
    */
-  parse(xml: string): EffectsResponse {
+  parse(xml: string, welsh: boolean | null = null): EffectsResponse {
     const obj = this.parser.parse(xml);
 
     const feed = obj.feed;
@@ -49,7 +54,7 @@ export class EffectsParser {
       if (!effect) {
         throw new Error('Unable to find Effect element in feed entry');
       }
-      return this.metadataParser.convertEffect(effect, null, today);
+      return this.metadataParser.convertEffect(effect, welsh, today);
     });
 
     return {

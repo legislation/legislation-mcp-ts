@@ -166,9 +166,10 @@ get_legislation_metadata(type="ukpga", year="2010", number="15", fragment="part/
 
 When a `fragment` parameter is provided (e.g. `"section/12"`, `"part/2/chapter/1"`), the metadata is scoped to that provision:
 
-- **`unappliedEffects`** includes only effects targeting the fragment and its ancestors
-- **`upToDate`** reflects whether that specific fragment is current
-- All other fields (`id`, `title`, `status`, etc.) still describe the parent document
+- For **revised** legislation: `unappliedEffects` and `upToDate` are scoped to the fragment
+- For **enacted/made** legislation (status `"final"`): both fields are omitted (fragment-level enrichment is not yet implemented)
+
+All other fields (`id`, `title`, `status`, etc.) describe the parent document.
 
 Use `get_legislation_table_of_contents` to discover valid fragment identifiers.
 
