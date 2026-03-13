@@ -6,7 +6,8 @@
 
 import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
 import { EffectsParser } from "../parsers/effects-parser.js";
-import { LegislationMetadata, MetadataParser, UnappliedEffect } from "../parsers/metadata-parser.js";
+import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect } from "../parsers/metadata-parser.js";
+import { contains } from "../utils/section-range-containment.js";
 
 export const name = "get_legislation_metadata";
 
@@ -18,7 +19,7 @@ Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\`
 
 \`unappliedEffects\` and \`upToDate\` are only present for the latest version (no \`version\` parameter). When a specific version is requested, both fields are omitted — effects are not tracked for point-in-time snapshots. For the latest version, \`upToDate\` is \`true\` when all in-force effects have been applied, \`false\` when some are outstanding.
 
-Fragment: pass a \`fragment\` to scope metadata to a specific provision (e.g. \`"section/12"\`, \`"part/2/chapter/1"\`). For revised legislation, \`unappliedEffects\` and \`upToDate\` are scoped to the fragment. For enacted/made legislation, these fields are omitted (fragment-level enrichment is not yet implemented). Use \`get_legislation_table_of_contents\` to discover valid fragment IDs.
+Fragment: pass a \`fragment\` to scope metadata to a specific provision (e.g. \`"section/12"\`, \`"part/2/chapter/1"\`). \`unappliedEffects\` and \`upToDate\` are scoped to the fragment for both revised and enacted/made legislation. Use \`get_legislation_table_of_contents\` to discover valid fragment IDs.
 
 Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version.
 
@@ -82,18 +83,10 @@ export async function execute(
   // current version and received an enacted/made version (because no revised
   // version exists yet), fetch effects from the changes API instead.
   if (!version && metadata.status === 'final') {
-    if (!fragment) {
-      try {
-        await enrichWithEffects(metadata, client);
-      } catch {
-        // Effects search failed — return metadata without effects rather than failing entirely
-        metadata.unappliedEffects = undefined;
-        metadata.upToDate = undefined;
-      }
-    } else {
-      // TODO: fragment-level enrichment needs AffectedProvisions parsed into
-      // ProvisionRef types (section refs + ranges) and matched against the
-      // fragment's element IDs.
+    try {
+      await enrichWithEffects(metadata, client, fragment);
+    } catch {
+      // Effects search failed — return metadata without effects rather than failing entirely
       metadata.unappliedEffects = undefined;
       metadata.upToDate = undefined;
     }
@@ -112,10 +105,12 @@ export async function execute(
 /**
  * Fetch all effects targeting this legislation from the changes API and
  * inject them into the metadata, replacing the (empty) XML-derived values.
+ * When a fragment is provided, only effects targeting that provision are kept.
  */
 async function enrichWithEffects(
   metadata: LegislationMetadata,
-  client: LegislationClient
+  client: LegislationClient,
+  fragment?: string
 ) {
   const effectsParser = new EffectsParser();
   const welsh = metadata.language === 'welsh';
@@ -135,8 +130,46 @@ async function enrichWithEffects(
     page++;
   }
 
-  metadata.unappliedEffects = allEffects;
-  metadata.upToDate = !allEffects.some(e => e.outstanding);
+  const effects = fragment
+    ? filterEffectsForFragment(allEffects, fragment)
+    : allEffects;
+  metadata.unappliedEffects = effects;
+  metadata.upToDate = !effects.some(e => e.outstanding);
+}
+
+/**
+ * Keep only effects whose target refs overlap with the given fragment.
+ * An effect matches if it has no refs (whole-act effect) or any ref
+ * is the fragment itself, an ancestor, or a descendant.
+ */
+export function filterEffectsForFragment(
+  effects: UnappliedEffect[],
+  fragment: string
+): UnappliedEffect[] {
+  const elementId = fragment.replace(/\//g, '-');
+  return effects.filter(e => effectMatchesFragment(e.target.refs, elementId));
+}
+
+/**
+ * Check whether a set of provision refs overlaps with a fragment element ID.
+ *
+ * Returns true if:
+ * - refs is undefined (whole-act effect — always relevant)
+ * - any section ref overlaps (exact, ancestor, or descendant match)
+ * - the fragment falls within any range (inclusive, with proper token ordering)
+ */
+function effectMatchesFragment(
+  refs: ProvisionRef[] | undefined,
+  elementId: string
+): boolean {
+  if (!refs) return true;
+  return refs.some(ref => {
+    if (ref.type === 'section') {
+      // A single section ref is a degenerate range where start === end
+      return contains(ref.ref, ref.ref, elementId);
+    }
+    return contains(ref.start, ref.end, elementId);
+  });
 }
 
 function formatDisambiguation(result: Extract<LegislationResponse, { kind: "disambiguation" }>) {

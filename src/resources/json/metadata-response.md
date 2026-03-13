@@ -85,7 +85,11 @@ These fields reflect the version and language of the response, when the request 
     - **required** (boolean) - Whether application is required
     - **outstanding** (boolean) - Whether the effect should have been applied but wasn't (required, not applied, and in force on or before today)
     - **notes** (string, optional) - Editorial notes
-    - **target** (object) - The affected legislation (`id`, `type`, `year`, `number`, `title`, `provisions`, `extent`)
+    - **target** (object) - The affected legislation:
+      - `id`, `type`, `year`, `number`, `title` - Identification fields
+      - `provisions` (string, optional) - Plain-text citation, e.g. `"s. 12(7)(a)"`
+      - `refs` (array, optional) - Structured provision refs (element IDs) for matching against fragments. Each is either `{ type: "section", ref }` or `{ type: "range", start, end }`
+      - `extent` (array, optional) - Geographical extent, e.g. `["E","W","S"]`
     - **source** (object) - The affecting legislation (same shape as target)
     - **commencement** (string, optional) - Commencement authority provisions
     - **inForce** (array) - In-force dates, each with:
@@ -166,8 +170,7 @@ get_legislation_metadata(type="ukpga", year="2010", number="15", fragment="part/
 
 When a `fragment` parameter is provided (e.g. `"section/12"`, `"part/2/chapter/1"`), the metadata is scoped to that provision:
 
-- For **revised** legislation: `unappliedEffects` and `upToDate` are scoped to the fragment
-- For **enacted/made** legislation (status `"final"`): both fields are omitted (fragment-level enrichment is not yet implemented)
+- `unappliedEffects` and `upToDate` are scoped to the fragment for both revised and enacted/made legislation
 
 All other fields (`id`, `title`, `status`, etc.) describe the parent document.
 

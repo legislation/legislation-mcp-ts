@@ -205,6 +205,65 @@ test('EffectsParser handles single language-tagged titles (no English)', () => {
   assert.strictEqual(result.effects[0].source.title, 'Teitl Cymraeg', 'Should extract text from language-tagged source title');
 });
 
+test('EffectsParser parses structured AffectedProvisions refs from feed', () => {
+  const feedWithRefs = `
+<feed xmlns="http://www.w3.org/2005/Atom"
+    xmlns:leg="http://www.legislation.gov.uk/namespaces/legislation"
+    xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+    xmlns:openSearch="http://a9.com/-/spec/opensearch/1.1/">
+    <openSearch:itemsPerPage>50</openSearch:itemsPerPage>
+    <openSearch:startIndex>1</openSearch:startIndex>
+    <leg:page>1</leg:page>
+    <leg:morePages>0</leg:morePages>
+    <openSearch:totalResults>1</openSearch:totalResults>
+    <entry>
+        <content type="text/xml">
+            <ukm:Effect
+                Type="substituted"
+                Applied="false"
+                RequiresApplied="true"
+                AffectedClass="UnitedKingdomPublicGeneralAct"
+                AffectedYear="2020"
+                AffectedNumber="7"
+                AffectedProvisions="s. 18(3)"
+                AffectedURI="http://www.legislation.gov.uk/id/ukpga/2020/7"
+                AffectingClass="UnitedKingdomPublicGeneralAct"
+                AffectingYear="2024"
+                AffectingNumber="1"
+                AffectingProvisions="s. 10"
+                AffectingURI="http://www.legislation.gov.uk/id/ukpga/2024/1"
+                EffectId="key-abc123">
+                <ukm:AffectedProvisions>
+                    <ukm:Section Ref="section-18-3" URI="http://www.legislation.gov.uk/id/ukpga/2020/7/section/18/3">s. 18(3)</ukm:Section>
+                </ukm:AffectedProvisions>
+                <ukm:AffectingProvisions>
+                    <ukm:Section Ref="section-10" URI="http://www.legislation.gov.uk/id/ukpga/2024/1/section/10">s. 10</ukm:Section>
+                    <ukm:Section Ref="section-11" URI="http://www.legislation.gov.uk/id/ukpga/2024/1/section/11">s. 11</ukm:Section>
+                </ukm:AffectingProvisions>
+                <ukm:AffectedTitle>Coronavirus Act 2020</ukm:AffectedTitle>
+                <ukm:AffectingTitle>Some Act 2024</ukm:AffectingTitle>
+                <ukm:InForceDates>
+                    <ukm:InForce Date="2024-06-01" Qualification="wholly in force"/>
+                </ukm:InForceDates>
+            </ukm:Effect>
+        </content>
+        <title>Effect with refs</title>
+        <updated>2026-03-06T15:41:50Z</updated>
+    </entry>
+</feed>
+`;
+
+  const parser = new EffectsParser();
+  const result = parser.parse(feedWithRefs);
+
+  const effect = result.effects[0];
+  assert.deepStrictEqual(effect.target.refs, [{ type: 'section', ref: 'section-18-3' }], 'Should parse AffectedProvisions refs');
+  assert.deepStrictEqual(effect.source.refs, [
+    { type: 'section', ref: 'section-10' },
+    { type: 'section', ref: 'section-11' },
+  ], 'Should parse multiple AffectingProvisions refs');
+});
+
 test('EffectsParser handles empty feed', () => {
   const emptyFeed = `
     <feed xmlns="http://www.w3.org/2005/Atom"

@@ -176,6 +176,76 @@ test('MetadataParser uses Welsh effect titles for Welsh documents', () => {
   assert.strictEqual(effect?.requiredWelsh, undefined, 'requiredWelsh should not be set in document context');
 });
 
+test('MetadataParser parses structured provision refs from AffectedProvisions elements', () => {
+  const parser = new MetadataParser();
+  const xmlWithRefs = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation" DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+            <ukm:UnappliedEffects>
+                <ukm:UnappliedEffect Type="substituted" AffectedURI="http://www.legislation.gov.uk/ukpga/2020/2" AffectedClass="UnitedKingdomPublicGeneralAct" AffectedYear="2020" AffectedNumber="2" AffectedProvisions="s. 1(2)(a)" AffectingURI="http://www.legislation.gov.uk/ukpga/2024/1" AffectingClass="UnitedKingdomPublicGeneralAct" AffectingYear="2024" AffectingNumber="1" AffectingProvisions="s. 10" Applied="false" RequiresApplied="true">
+                    <ukm:AffectedProvisions>
+                        <ukm:Section Ref="section-1-2-a" URI="http://www.legislation.gov.uk/ukpga/2020/2/section/1/2/a">s. 1(2)(a)</ukm:Section>
+                    </ukm:AffectedProvisions>
+                    <ukm:AffectingProvisions>
+                        <ukm:Section Ref="section-10" URI="http://www.legislation.gov.uk/ukpga/2024/1/section/10">s. 10</ukm:Section>
+                    </ukm:AffectingProvisions>
+                    <ukm:AffectedTitle>Act 2020</ukm:AffectedTitle>
+                    <ukm:AffectingTitle>Act 2024</ukm:AffectingTitle>
+                    <ukm:InForceDates>
+                        <ukm:InForce Date="2024-06-01" Applied="false"/>
+                    </ukm:InForceDates>
+                </ukm:UnappliedEffect>
+            </ukm:UnappliedEffects>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xmlWithRefs);
+  const effect = result.unappliedEffects?.[0];
+
+  assert.strictEqual(effect?.target.provisions, 's. 1(2)(a)', 'Should still have plain text provisions');
+  assert.deepStrictEqual(effect?.target.refs, [{ type: 'section', ref: 'section-1-2-a' }], 'Should parse AffectedProvisions Section ref');
+  assert.deepStrictEqual(effect?.source.refs, [{ type: 'section', ref: 'section-10' }], 'Should parse AffectingProvisions Section ref');
+});
+
+test('MetadataParser parses SectionRange provision refs', () => {
+  const parser = new MetadataParser();
+  const effect = parser.convertEffect({
+    '@_Type': 'substituted',
+    '@_Applied': 'false',
+    '@_RequiresApplied': 'true',
+    '@_AffectedURI': 'http://www.legislation.gov.uk/ukpga/2020/2',
+    '@_AffectedClass': 'UnitedKingdomPublicGeneralAct',
+    '@_AffectedYear': '2020',
+    '@_AffectedNumber': '2',
+    '@_AffectedProvisions': 'ss. 1-3',
+    AffectedProvisions: {
+      SectionRange: {
+        '@_URI': 'http://www.legislation.gov.uk/id/ukpga/2020/2/section/1',
+        '@_UpTo': 'http://www.legislation.gov.uk/id/ukpga/2020/2/section/3',
+      },
+    },
+    '@_AffectingURI': 'http://www.legislation.gov.uk/ukpga/2024/1',
+    '@_AffectingClass': 'UnitedKingdomPublicGeneralAct',
+    '@_AffectingYear': '2024',
+    '@_AffectingNumber': '1',
+    '@_AffectingProvisions': 's. 10',
+    AffectedTitle: 'Act 2020',
+    AffectingTitle: 'Act 2024',
+    InForceDates: {},
+  }, false, '2024-01-01');
+
+  assert.deepStrictEqual(effect.target.refs, [{ type: 'range', start: 'section-1', end: 'section-3' }]);
+  assert.strictEqual(effect.source.refs, undefined, 'No refs when AffectingProvisions element is absent');
+});
+
 test('MetadataParser skips effects for specific versions', () => {
   const parser = new MetadataParser();
   const xmlWithVersion = XML_WITH_EFFECTS.replace(

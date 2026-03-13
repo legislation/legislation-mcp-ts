@@ -58,6 +58,10 @@ export interface UnappliedEffect {
   inForce: InForceDate[];
 }
 
+export type ProvisionRef =
+  | { type: 'section'; ref: string }
+  | { type: 'range'; start: string; end: string };
+
 export interface EffectSource {
   id: string;                    // shortened URI, e.g. "ukpga/2024/10"
   type: string;                  // short type code, e.g. "ukpga"
@@ -65,6 +69,7 @@ export interface EffectSource {
   number: number;
   title: string;
   provisions?: string;           // plain text from attribute, e.g. "s. 12(7)(a)"
+  refs?: ProvisionRef[];         // structured refs from AffectedProvisions/AffectingProvisions elements
   extent?: string[];             // ["E", "W", "S"] — same normalization as LegislationMetadata.extent
 }
 
@@ -289,8 +294,40 @@ export class MetadataParser {
       number: parseInt(e[`@_${prefix}Number`], 10) || 0,
       title: this.extractEffectTitle(e[`${prefix}Title`], welsh),
       provisions: e[`@_${prefix}Provisions`] || undefined,
+      refs: this.parseProvisionRefs(e[`${prefix}Provisions`]),
       extent,
     };
+  }
+
+  private parseProvisionRefs(container: any): ProvisionRef[] | undefined {
+    if (!container || typeof container !== 'object') return undefined;
+
+    const refs: ProvisionRef[] = [];
+
+    if (container.Section) {
+      const sections = Array.isArray(container.Section) ? container.Section : [container.Section];
+      for (const s of sections) {
+        const ref = this.uriToElementId(s['@_URI']);
+        if (ref) refs.push({ type: 'section', ref });
+      }
+    }
+
+    if (container.SectionRange) {
+      const ranges = Array.isArray(container.SectionRange) ? container.SectionRange : [container.SectionRange];
+      for (const r of ranges) {
+        const start = this.uriToElementId(r['@_URI']);
+        const end = this.uriToElementId(r['@_UpTo']);
+        if (start && end) refs.push({ type: 'range', start, end });
+      }
+    }
+
+    return refs.length > 0 ? refs : undefined;
+  }
+
+  /** Extract an element ID from a provision URI (e.g. ".../section/40B" → "section-40B"). */
+  private uriToElementId(uri: string | undefined): string | undefined {
+    if (!uri) return undefined;
+    return parseLegislationUri(uri)?.fragment?.replace(/\//g, '-');
   }
 
   private convertInForce(inForceDates: any): InForceDate[] {

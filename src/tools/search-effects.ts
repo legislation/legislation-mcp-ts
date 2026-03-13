@@ -88,6 +88,16 @@ export const outputSchema = {
               number: { type: "number" },
               title: { type: "string" },
               provisions: { type: "string", description: "e.g. 's. 12(7)(a)'" },
+              refs: {
+                type: "array",
+                description: "Structured provision refs (element IDs) from AffectedProvisions",
+                items: {
+                  oneOf: [
+                    { type: "object", properties: { type: { const: "section" }, ref: { type: "string" } }, required: ["type", "ref"] },
+                    { type: "object", properties: { type: { const: "range" }, start: { type: "string" }, end: { type: "string" } }, required: ["type", "start", "end"] },
+                  ],
+                },
+              },
               extent: { type: "array", items: { type: "string" }, description: "e.g. ['E','W','S']" },
             },
             required: ["id", "type", "year", "number", "title"],
@@ -102,6 +112,16 @@ export const outputSchema = {
               number: { type: "number" },
               title: { type: "string" },
               provisions: { type: "string" },
+              refs: {
+                type: "array",
+                description: "Structured provision refs (element IDs) from AffectingProvisions",
+                items: {
+                  oneOf: [
+                    { type: "object", properties: { type: { const: "section" }, ref: { type: "string" } }, required: ["type", "ref"] },
+                    { type: "object", properties: { type: { const: "range" }, start: { type: "string" }, end: { type: "string" } }, required: ["type", "start", "end"] },
+                  ],
+                },
+              },
               extent: { type: "array", items: { type: "string" } },
             },
             required: ["id", "type", "year", "number", "title"],
