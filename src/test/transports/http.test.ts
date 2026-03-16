@@ -26,9 +26,33 @@ test("MCP endpoint is accessible without authentication when no key set", async 
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
   });
 
-  // Without transport configured, returns 404 (no handler registered)
   // Key assertion: no auth rejection, endpoint is open
-  assert.strictEqual(res.status, 404);
+  assert.strictEqual(res.status, 200);
+});
+
+test("MCP endpoint handles repeated requests with a fresh stateless transport", async () => {
+  const app = createHttpApp();
+
+  const first = await app.request("/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+  });
+
+  const second = await app.request("/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }),
+  });
+
+  assert.strictEqual(first.status, 200);
+  assert.strictEqual(second.status, 200);
 });
 
 test("returns 401 when server key is set and no token provided", async () => {
@@ -105,8 +129,8 @@ test("allows access when correct bearer token is provided", async () => {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
   });
 
-  // 404 because no transport configured, but crucially not 401
-  assert.strictEqual(res.status, 404);
+  // Crucially not 401 — auth passed, request reaches MCP handler
+  assert.strictEqual(res.status, 200);
 });
 
 test("health check is accessible even when server key is set", async () => {
