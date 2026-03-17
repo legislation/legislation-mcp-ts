@@ -177,6 +177,7 @@ function serializeBlocks(blocks: Block[], indent: number): string {
 function serializeBlock(block: Block, indent: number): string {
   switch (block.type) {
     case 'text':
+    case 'appendText':
       return block.content + '\n';
     case 'table':
       return serializeTable(block);

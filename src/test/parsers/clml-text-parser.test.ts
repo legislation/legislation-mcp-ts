@@ -451,7 +451,7 @@ test('BlockSection sibling of P1para is preserved', () => {
   assert.ok(result.includes('A'), 'Should include table content from BlockSection sibling');
 });
 
-test('BlockAmendment indentation', () => {
+test('BlockAmendment content preserves trailing AppendText separately', () => {
   const xml = `
     <P1>
       <Pnumber>1</Pnumber>
@@ -465,13 +465,23 @@ test('BlockAmendment indentation', () => {
             </P1para>
           </P1>
         </BlockAmendment>
+        <AppendText>, and</AppendText>
       </P1para>
     </P1>`;
 
-  const result = parseToText(xml);
+  const doc = parse(xml);
+  const prov = doc.body[0];
 
-  assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('5. Replacement text here.'), 'Should include amendment content');
+  assert.ok(prov && prov.type === 'provision' && prov.variant === 'leaf', 'Should parse leaf provision');
+  assert.deepStrictEqual(
+    prov.content.map((block) => block.type),
+    ['text', 'blockAmendment', 'appendText'],
+    'Should preserve AppendText as its own block after BlockAmendment',
+  );
+  const append = prov.content[2];
+  assert.ok(append && append.type === 'appendText', 'Third block should be AppendText');
+  if (append.type !== 'appendText') throw new Error('Expected AppendText');
+  assert.strictEqual(append.content, ', and');
 });
 
 test('Schedules wrapper with Title (title dropped)', () => {
@@ -598,27 +608,31 @@ test('Text element collapses internal whitespace', () => {
   assert.ok(!result.includes('under\n'), 'Should not contain hard line breaks within Text');
 });
 
-test('BlockAmendment is indented at top level', () => {
+test('top-level AppendText after BlockAmendment is preserved in body sequence', () => {
   const xml = `
-    <P1>
-      <Pnumber>1</Pnumber>
-      <P1para>
-        <Text>For section 5 substitute:</Text>
-        <BlockAmendment>
-          <P1>
-            <Pnumber>5</Pnumber>
-            <P1para>
-              <Text>New section five text.</Text>
-            </P1para>
-          </P1>
-        </BlockAmendment>
-      </P1para>
-    </P1>`;
+    <Root>
+      <BlockAmendment>
+        <P1>
+          <Pnumber>5</Pnumber>
+          <P1para>
+            <Text>New section five text</Text>
+          </P1para>
+        </P1>
+      </BlockAmendment>
+      <AppendText>, and</AppendText>
+    </Root>`;
 
-  const result = parseToText(xml);
+  const doc = parse(xml);
 
-  assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('\t5. New section five text.'), 'Block amendment should be indented');
+  assert.deepStrictEqual(
+    doc.body.map((node) => node.type),
+    ['blockAmendment', 'appendText'],
+    'Should preserve top-level AppendText as a sibling after BlockAmendment',
+  );
+  const append = doc.body[1];
+  assert.ok(append && append.type === 'appendText', 'Second body node should be AppendText');
+  if (append.type !== 'appendText') throw new Error('Expected AppendText');
+  assert.strictEqual(append.content, ', and');
 });
 
 test('parser returns Document type', () => {

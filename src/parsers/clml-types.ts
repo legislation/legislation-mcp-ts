@@ -60,10 +60,15 @@ export type Paragraph =
 
 /** Blocks */
 
-export type Block = Text | Table | Figure | BlockAmendment | List | Footnote | NumberedParagraph;
+export type Block = Text | AppendText | Table | Figure | BlockAmendment | List | Footnote | NumberedParagraph;
 
 export type Text = {
   type: 'text';
+  content: InlineContent;
+};
+
+export type AppendText = {
+  type: 'appendText';
   content: InlineContent;
 };
 

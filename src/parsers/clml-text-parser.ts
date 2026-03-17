@@ -9,7 +9,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { parseLegislationUri } from '../utils/legislation-uri.js';
 import type {
   Document, Division, DivisionName, Provision, SubProvision,
-  Paragraph, Schedule, Block, Text, Table, Figure, BlockAmendment,
+  Paragraph, Schedule, Block, Text, AppendText, Table, Figure, BlockAmendment,
   List, Footnote, NumberedParagraph,
 } from './clml-types.js';
 
@@ -115,7 +115,7 @@ function collectDocument(el: Element, doc: Document): void {
 }
 
 const KNOWN_BLOCK_TAGS = new Set([
-  'Text', 'Tabular', 'Figure', 'Image', 'BlockAmendment',
+  'Text', 'AppendText', 'Tabular', 'Figure', 'Image', 'BlockAmendment',
   'UnorderedList', 'OrderedList', 'Footnote', 'FootnoteRef', 'Division',
 ]);
 
@@ -540,6 +540,12 @@ function parseBlockElement(el: Element): Block[] {
   if (name === 'Text') {
     const content = (el.textContent || '').replace(/\s+/g, ' ').trim();
     if (content) return [{ type: 'text', content }];
+    return [];
+  }
+
+  if (name === 'AppendText') {
+    const content = extractText(el);
+    if (content) return [{ type: 'appendText', content } as AppendText];
     return [];
   }
 
