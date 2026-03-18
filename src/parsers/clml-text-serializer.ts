@@ -234,6 +234,94 @@ function serializeNumberedParagraph(np: NumberedParagraph): string {
   return `${np.number} ${content}\n`;
 }
 
+// --- Writer ---
+
+type PrefixEntry = {
+  current: string;
+  rest?: string;
+};
+
+export class Writer {
+  private lines: string[] = [];
+  private currentLine = '';
+  private lineStarted = false;
+  private lastWasBlank = false;
+  private prefixStack: PrefixEntry[] = [];
+
+  /** Append text to the current line. Starts the line (applying prefixes) if needed. */
+  write(text: string): void {
+    if (!this.lineStarted) {
+      this.currentLine = this.buildPrefix();
+      this.lineStarted = true;
+    }
+    this.currentLine += text;
+  }
+
+  /** Finish the current line. If no write() was called, emits a prefix-only line. */
+  endLine(): void {
+    if (!this.lineStarted) {
+      this.currentLine = this.buildPrefix();
+    }
+    this.lines.push(this.currentLine);
+    this.currentLine = '';
+    this.lineStarted = false;
+    this.lastWasBlank = false;
+    this.switchHanging();
+  }
+
+  /** Emit a blank separator line with active prefixes. Consecutive calls coalesce. */
+  blankLine(): void {
+    if (this.lineStarted) {
+      this.endLine();
+    }
+    if (!this.lastWasBlank) {
+      this.lines.push(this.buildPrefix().trimEnd());
+      this.lastWasBlank = true;
+    }
+  }
+
+  /** Increase indent by one tab for all lines within fn. */
+  withIndent(fn: () => void): void {
+    this.withPrefix('\t', fn);
+  }
+
+  /** Add a prefix to every line within fn (e.g. '> ' for block quotes). */
+  withPrefix(prefix: string, fn: () => void): void {
+    this.withEntry({ current: prefix }, fn);
+  }
+
+  /** First line gets `first` prefix, subsequent lines get `rest`. */
+  withHanging(first: string, rest: string, fn: () => void): void {
+    this.withEntry({ current: first, rest }, fn);
+  }
+
+  private withEntry(entry: PrefixEntry, fn: () => void): void {
+    this.prefixStack.push(entry);
+    try { fn(); } finally { this.prefixStack.pop(); }
+  }
+
+  /** Flatten all lines to a single string. */
+  toString(): string {
+    const lines = this.lineStarted
+      ? [...this.lines, this.currentLine]
+      : this.lines;
+    return lines.join('\n');
+  }
+
+  private buildPrefix(): string {
+    return this.prefixStack.map(e => e.current).join('');
+  }
+
+  private switchHanging(): void {
+    for (const entry of this.prefixStack) {
+      if (entry.rest !== undefined) {
+        entry.current = entry.rest;
+        entry.rest = undefined;
+      }
+    }
+  }
+}
+
 // --- Helpers ---
 
 function smartQuotes(text: string): string {
