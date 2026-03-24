@@ -264,6 +264,24 @@ test('block amendment is indented', () => {
   assert.ok(result.includes('\t5. New section five text.'), 'Block amendment should be indented');
 });
 
+test('amendment-only provision uses a single line break before amendment content', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      {
+        type: 'provision', number: '5.', variant: 'leaf',
+        content: [text('New section five text.')],
+      } as Provision,
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. \n\t5. New section five text.');
+});
+
 test('footnotes with number and content', () => {
   const fn1: Footnote = { type: 'footnote', number: '1', content: 'First footnote.' };
   const fn2: Footnote = { type: 'footnote', number: '2', content: 'Second footnote.' };
