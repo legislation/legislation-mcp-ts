@@ -211,7 +211,9 @@ function serializeTable(w: Writer, table: Table): void {
 function serializeBlockAmendment(w: Writer, amendment: BlockAmendment, indent: number): void {
   const tabs = '\t'.repeat(indent + 1);
   w.withPrefix(tabs, () => {
-    serializeAmendmentChildren(w, amendment.children);
+    w.withPrefix('> ', () => {
+      serializeAmendmentChildren(w, amendment.children);
+    });
   });
 }
 

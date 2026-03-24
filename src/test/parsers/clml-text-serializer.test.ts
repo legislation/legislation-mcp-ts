@@ -261,7 +261,7 @@ test('block amendment is indented', () => {
   };
   const result = serializeDocument(doc([prov]));
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('\t5. New section five text.'), 'Block amendment should be indented');
+  assert.ok(result.includes('\t> 5. New section five text.'), 'Block amendment should be indented with block quote');
 });
 
 test('amendment-only provision uses a single line break before amendment content', () => {
@@ -279,7 +279,7 @@ test('amendment-only provision uses a single line break before amendment content
     content: [amendment],
   };
   const result = serializeDocument(doc([prov]));
-  assert.strictEqual(result, '1. \n\t5. New section five text.');
+  assert.strictEqual(result, '1. \n\t> 5. New section five text.');
 });
 
 test('footnotes with number and content', () => {
