@@ -447,6 +447,75 @@ test('in nested amendment, run-on pair followed by provision gets blank-line sep
   assert.strictEqual(lines[idx - 1].trim(), '>', 'blank-line separator before provision following run-on pair');
 });
 
+test('body-level run-on amendment: open quote inline, close quote with AppendText attached', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('first item;')] } as Provision,
+      { type: 'provision', number: '(b)', variant: 'leaf', content: [text('second item.')] } as Provision,
+    ],
+  };
+  const appendTextBlock: AppendText = { type: 'appendText', content: ';' };
+  const document: Document = {
+    type: 'document',
+    prelims: [],
+    body: [
+      { type: 'text', content: 'For paragraph (a) substitute' } as Text,
+      amendment,
+      appendTextBlock,
+    ],
+    schedules: [],
+  };
+  const result = serializeDocument(document);
+  assert.ok(result.includes('substitute \u201cthe following\u2014'), 'open quote before lead-in at body level');
+  assert.ok(result.includes('second item.\u201d;'), 'close quote and AppendText on last line');
+  assert.ok(!result.includes('\t> \u201c'), 'no open quote inside > block');
+});
+
+test('body-level standalone block amendment consumes AppendText', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [{ type: 'text', content: 'new section text.' } as Text],
+  };
+  const appendTextBlock: AppendText = { type: 'appendText', content: ';' };
+  const document: Document = {
+    type: 'document',
+    prelims: [],
+    body: [amendment, appendTextBlock],
+    schedules: [],
+  };
+  const result = serializeDocument(document);
+  assert.ok(result.includes('new section text.\u201d;'), 'AppendText attached to closing mark');
+  assert.ok(!result.includes('\u201d\n;'), 'AppendText not on its own line');
+});
+
+test('schedule-level run-on amendment: open quote inline, close quote with AppendText attached', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('first item;')] } as Provision,
+      { type: 'provision', number: '(b)', variant: 'leaf', content: [text('second item.')] } as Provision,
+    ],
+  };
+  const schedule: Schedule = {
+    type: 'schedule',
+    number: 'Schedule 1',
+    title: 'Test Schedule',
+    body: [
+      { type: 'text', content: 'For paragraph (a) substitute' } as Text,
+      amendment,
+      { type: 'appendText', content: ';' } as AppendText,
+    ],
+  };
+  const result = serializeDocument(doc([], { schedules: [schedule] }));
+  assert.ok(result.includes('## Schedule 1'), 'schedule heading is preserved');
+  assert.ok(result.includes('substitute \u201cthe following\u2014'), 'open quote before lead-in at schedule level');
+  assert.ok(result.includes('second item.\u201d;'), 'close quote and AppendText on last line');
+  assert.ok(!result.includes('\t> \u201c'), 'no open quote inside > block');
+});
+
 test('footnotes with number and content', () => {
   const fn1: Footnote = { type: 'footnote', number: '1', content: 'First footnote.' };
   const fn2: Footnote = { type: 'footnote', number: '2', content: 'Second footnote.' };

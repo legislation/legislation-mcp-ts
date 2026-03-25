@@ -55,11 +55,21 @@ function serializePrelims(w: Writer, prelims: Prelims): void {
 // --- Structure ---
 
 function serializeBody(w: Writer, nodes: (Division | Provision | Block)[]): void {
-  for (const node of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const next = nodes[i + 1];
     if (node.type === 'division') {
       serializeDivision(w, node);
     } else if (node.type === 'provision') {
       serializeProvision(w, node, 0);
+    } else if (isRunOnAmendment(node, next)) {
+      w.write(node.content);
+      if (!/[\s\u2014\u2013]$/.test(node.content)) w.write(' ');
+      i = consumeRunOnAmendment(w, nodes, i, 0);
+    } else if (node.type === 'blockAmendment') {
+      const appendText = next?.type === 'appendText' ? next.content : undefined;
+      serializeBlockAmendment(w, node, 0, appendText);
+      if (appendText !== undefined) i++;
     } else {
       serializeBlock(w, node as Block, 0);
     }
