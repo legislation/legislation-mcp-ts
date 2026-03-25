@@ -484,6 +484,36 @@ test('BlockAmendment content preserves trailing AppendText separately', () => {
   assert.strictEqual(append.content, ', and');
 });
 
+test('BlockAmendment with sibling P2 children keeps inserted subsections contiguous', () => {
+  const xml = `
+    <Root>
+      <BlockAmendment>
+        <P2>
+          <Pnumber>2A</Pnumber>
+          <P2para><Text>First inserted subsection.</Text></P2para>
+        </P2>
+        <P2>
+          <Pnumber>2B</Pnumber>
+          <P2para><Text>Second inserted subsection.</Text></P2para>
+        </P2>
+        <P2>
+          <Pnumber>2C</Pnumber>
+          <P2para><Text>Third inserted subsection.</Text></P2para>
+        </P2>
+      </BlockAmendment>
+    </Root>`;
+
+  const result = parseToText(xml);
+  const lines = result.split('\n').map(line => line.trimStart());
+  const secondIdx = lines.findIndex(line => line.includes('(2B) Second inserted subsection.'));
+  const thirdIdx = lines.findIndex(line => line.includes('(2C) Third inserted subsection.'));
+
+  assert.ok(secondIdx > 0, 'Should include the second inserted subsection');
+  assert.ok(thirdIdx > 0, 'Should include the third inserted subsection');
+  assert.notStrictEqual(lines[secondIdx - 1], '>', 'Should not insert a blank quoted line before sibling P2 content');
+  assert.notStrictEqual(lines[thirdIdx - 1], '>', 'Should not insert a blank quoted line before later sibling P2 content');
+});
+
 test('Schedules wrapper with Title (title dropped)', () => {
   const xml = `
     <Schedules>

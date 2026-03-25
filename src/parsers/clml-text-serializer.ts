@@ -412,7 +412,7 @@ function serializeAmendmentChildren(
       serializeDivision(w, child, leading);
       firstStructuralChild = false;
     } else if (child.type === 'provision') {
-      serializeProvision(w, child, 0, leading);
+      serializeProvision(w, child, 0, (child.level ?? 0) >= 2 ? 'line' : leading);
       firstStructuralChild = false;
     } else if (child.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;

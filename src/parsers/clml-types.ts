@@ -25,6 +25,8 @@ type ProvisionBase = {
   type: 'provision';
   number: InlineContent;
   title?: InlineContent;
+  /** P-level of the source element. Absent or 1 = section (P1); 2+ = subsection/paragraph. */
+  level?: number;
 };
 
 export type Provision =

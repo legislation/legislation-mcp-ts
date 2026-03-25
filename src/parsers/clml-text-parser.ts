@@ -30,15 +30,6 @@ function parseDocument(root: Element): Document {
     return { type: 'document', prelims: [], body: structural, schedules: [] };
   }
 
-  // Standalone P2 fragment — treat as a provision
-  const pMatch = root.localName.match(/^P(\d+)$/);
-  if (pMatch) {
-    const level = parseInt(pMatch[1], 10);
-    if (level >= 2) {
-      return { type: 'document', prelims: [], body: [parseProvisionAtAnyLevel(root, level)], schedules: [] };
-    }
-  }
-
   // If the root is a Schedule, wrap it
   if (root.localName === 'Schedule') {
     return { type: 'document', prelims: [], body: [], schedules: [parseSchedule(root)] };
@@ -114,6 +105,8 @@ function collectDocument(el: Element, doc: Document): void {
   }
 }
 
+const P_LEVEL_RE = /^P(\d+)$/;
+
 const KNOWN_BLOCK_TAGS = new Set([
   'Text', 'AppendText', 'Tabular', 'Figure', 'Image', 'BlockAmendment',
   'UnorderedList', 'OrderedList', 'Footnote', 'FootnoteRef', 'Division',
@@ -149,6 +142,11 @@ function parseDivisionOrProvision(el: Element): (Division | Provision)[] | null 
   }
   if (name === 'P1') {
     return [parseProvision(el)];
+  }
+  const pMatch = name.match(P_LEVEL_RE);
+  if (pMatch) {
+    const level = parseInt(pMatch[1], 10);
+    if (level >= 2) return [parseProvisionAtAnyLevel(el, level)];
   }
   return null;
 }
@@ -273,9 +271,9 @@ function parseProvisionAtAnyLevel(el: Element, level: number): Provision {
     (blocks) => ({ type: 'subProvision', number: '', variant: 'leaf', content: blocks }) as SubProvision,
     (variant) => {
       if (variant.kind === 'leaf') {
-        return { type: 'provision', number, variant: 'leaf', content: variant.blocks } as Provision;
+        return { type: 'provision', number, level, variant: 'leaf', content: variant.blocks } as Provision;
       }
-      return { type: 'provision', number, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Provision;
+      return { type: 'provision', number, level, variant: 'branch', intro: variant.intro, children: variant.children, wrapUp: variant.wrapUp } as Provision;
     },
   );
 }
@@ -323,7 +321,7 @@ function parseParagraphAtLevel(el: Element, level: number): Paragraph {
 /** Dispatch: is this element a P2 (SubProvision) or P3+ (Paragraph)? */
 function parseSubOrParagraph(child: Element): SubProvision | Paragraph | null {
   if (child.localName === 'P2') return parseSubProvision(child);
-  const m = child.localName.match(/^P(\d+)$/);
+  const m = child.localName.match(P_LEVEL_RE);
   if (m) {
     const level = parseInt(m[1], 10);
     if (level >= 3) return parseParagraphAtLevel(child, level);
@@ -332,7 +330,7 @@ function parseSubOrParagraph(child: Element): SubProvision | Paragraph | null {
 }
 
 function parseParagraphElement(child: Element): Paragraph | null {
-  const m = child.localName.match(/^P(\d+)$/);
+  const m = child.localName.match(P_LEVEL_RE);
   if (m) {
     const level = parseInt(m[1], 10);
     if (level >= 3) return parseParagraphAtLevel(child, level);
