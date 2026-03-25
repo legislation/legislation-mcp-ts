@@ -11,6 +11,8 @@
  *   - Children own content — serialize functions write text without worrying about positioning
  *   - Parents own positioning — they decide separators (blankLine) between children
  *   - The writer owns prefix stacks — indentation and '> ' prefixes compose automatically
+ *   - Numeric indent arguments represent structural depth for provision-style numbering;
+ *     Writer scopes own prefixes that must persist across rendered lines
  */
 
 import type {
@@ -82,6 +84,8 @@ function serializeProvision(
   indent: number,
   leading: LeadingSeparator = 'blank',
 ): void {
+  // `indent` is structural depth for numbering tokens such as `1.`, `(1)`, `(a)`.
+  // Multiline layout still belongs to the Writer within child serializers.
   if (prov.title) {
     applyLeadingSeparator(w, leading);
     w.write(`${prov.number} **${prov.title}**`);
@@ -227,6 +231,8 @@ function serializeBlockAmendment(
   appendText?: string,
   runOn?: boolean,
 ): void {
+  // Amendments are multiline quoted layout, so their prefixes are replayed through
+  // Writer scopes instead of embedding a pre-indented string into the parent.
   const open = amendment.format === 'single' ? '\u2018'
     : amendment.format === 'none' ? ''
     : '\u201c';
@@ -275,13 +281,17 @@ function serializeBlockAmendment(
 }
 
 function serializeList(w: Writer, list: List, indent: number): void {
-  const itemIndent = indent + 1;
-  const tabs = '\t'.repeat(itemIndent);
+  // Lists are line-oriented layout. The bullet and continuation spacing must apply
+  // to every rendered line of the item, so they belong to Writer prefixes rather
+  // than string-flattened item output.
+  w.endOpenLine();
+  const tabs = '\t'.repeat(indent + 1);
   for (const item of list.items) {
-    const sub = new Writer();
-    serializeBlocks(sub, item, itemIndent);
-    w.write(`${tabs}- ${sub.toString().trim()}`);
-    w.endLine();
+    w.withPrefix(tabs, () => {
+      w.withHanging('- ', '  ', () => {
+        serializeBlocks(w, item, indent);
+      });
+    });
   }
 }
 
@@ -342,7 +352,8 @@ export class Writer {
     }
   }
 
-  /** Increase indent by one tab for all lines within fn. */
+  /** Increase indent by one tab for all lines within fn. Use this for layout
+   * prefixes that must persist across rendered lines, not for structural numbering depth. */
   withIndent(fn: () => void): void {
     this.withPrefix('\t', fn);
   }

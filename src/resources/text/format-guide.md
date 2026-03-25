@@ -120,7 +120,33 @@ No alignment or separator rows are included.
 
 ## Block Amendments
 
-Quoted amendments (text being inserted/substituted into other legislation) appear indented relative to the surrounding text.
+Quoted amendments (text being inserted or substituted into other legislation) use Markdown block quote syntax (`> `), indented to the nesting depth of the surrounding provision. Opening and closing typographic quotation marks bracket the quoted content. Any trailing punctuation (`;`, `.`, `,`) attached to the closing mark comes from an `AppendText` element in the source.
+
+```
+1. After subsection (3) insert—
+	> "(3A) New subsection text."
+
+(3) For paragraph (a) substitute—
+	> "(a) first item;
+	> (b) second item."
+```
+
+When the text immediately before an amendment ends with an opening phrase, the opening quotation mark and the first quoted word appear inline on the same line:
+
+```
+1. For paragraph (a) substitute "the following—
+	> (a) first item;
+	> (b) second item."
+```
+
+Nested amendments (an amendment within an amendment) use `> > ` prefixes:
+
+```
+	> "(1) For subsection (2) substitute—
+	> 	> "(2) New text.""
+```
+
+The `Format` attribute on the source `BlockAmendment` element controls the quote characters: double curly quotes `" "` (default), single curly quotes `' '`, or no quotes at all.
 
 ## What Is Excluded
 

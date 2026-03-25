@@ -245,6 +245,42 @@ test('unordered list', () => {
   assert.ok(result.includes('- Second item'), 'Should include second list item');
 });
 
+test('unordered list preserves hanging indent for multiline items', () => {
+  const list: List = {
+    type: 'list', ordered: false,
+    items: [
+      [text('First line'), text('Second line')],
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('The following item applies:'), list],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. The following item applies:\n\t- First line\n\t  Second line');
+});
+
+test('unordered list keeps block amendment prefixes within the hanging indent', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'provision', number: '5.', variant: 'leaf', content: [text('Amendment text.')] } as Provision,
+    ],
+  };
+  const list: List = {
+    type: 'list', ordered: false,
+    items: [
+      [text('After section 4 insert'), amendment],
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('The following item applies:'), list],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. The following item applies:\n\t- After section 4 insert\n\t  \t> \u201c5. Amendment text.\u201d');
+});
+
 test('block amendment is indented with block quote and curly double quotes', () => {
   const amendment: BlockAmendment = {
     type: 'blockAmendment',
