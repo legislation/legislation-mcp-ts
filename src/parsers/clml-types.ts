@@ -85,6 +85,7 @@ export type Figure = {
 
 export type BlockAmendment = {
   type: 'blockAmendment';
+  format?: 'single' | 'double' | 'none';
   children: (Division | Provision | Block)[];
 };
 

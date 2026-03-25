@@ -637,7 +637,12 @@ function parseBlockAmendment(el: Element): BlockAmendment {
     children.push(...blocks);
   }
 
-  return { type: 'blockAmendment', children };
+  const amendment: BlockAmendment = { type: 'blockAmendment', children };
+  const format = el.getAttribute('Format');
+  if (format === 'single' || format === 'double' || format === 'none') {
+    amendment.format = format;
+  }
+  return amendment;
 }
 
 function parseList(el: Element, ordered: boolean): List {

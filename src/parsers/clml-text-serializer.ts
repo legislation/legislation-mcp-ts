@@ -15,7 +15,7 @@
 
 import type {
   Document, Prelims, Division, DivisionName, Provision, SubProvision,
-  Paragraph, Schedule, Block, Table, BlockAmendment, List,
+  Paragraph, Schedule, Block, Text, Table, BlockAmendment, List,
   NumberedParagraph,
 } from './clml-types.js';
 
@@ -166,8 +166,20 @@ function serializeSchedule(w: Writer, schedule: Schedule): void {
 // --- Blocks ---
 
 function serializeBlocks(w: Writer, blocks: Block[], indent: number): void {
-  for (const block of blocks) {
-    serializeBlock(w, block, indent);
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const next = blocks[i + 1];
+    if (isRunOnAmendment(block, next)) {
+      w.write(block.content);
+      if (!/[\s\u2014\u2013]$/.test(block.content)) w.write(' ');
+      i = consumeRunOnAmendment(w, blocks, i, indent);
+    } else if (block.type === 'blockAmendment') {
+      const appendText = next?.type === 'appendText' ? next.content : undefined;
+      serializeBlockAmendment(w, block, indent, appendText);
+      if (appendText !== undefined) i++;
+    } else {
+      serializeBlock(w, block, indent);
+    }
   }
 }
 
@@ -208,11 +220,56 @@ function serializeTable(w: Writer, table: Table): void {
   }
 }
 
-function serializeBlockAmendment(w: Writer, amendment: BlockAmendment, indent: number): void {
+function serializeBlockAmendment(
+  w: Writer,
+  amendment: BlockAmendment,
+  indent: number,
+  appendText?: string,
+  runOn?: boolean,
+): void {
+  const open = amendment.format === 'single' ? '\u2018'
+    : amendment.format === 'none' ? ''
+    : '\u201c';
+  const close = amendment.format === 'single' ? '\u2019'
+    : amendment.format === 'none' ? ''
+    : '\u201d';
+
+  let bodyChildren: (Division | Provision | Block)[];
+  if (runOn && amendment.children[0].type === 'text') {
+    w.write(open + amendment.children[0].content);
+    bodyChildren = amendment.children.slice(1);
+  } else {
+    bodyChildren = amendment.children;
+  }
+
+  const sub = new Writer();
+  serializeAmendmentChildren(sub, bodyChildren);
+  const lines = sub.toString().trimEnd().split('\n');
+
+  let firstIdx = -1;
+  let lastIdx = 0;  // fallback to line 0, matching original behaviour for all-empty bodies
+  for (let j = 0; j < lines.length; j++) {
+    if (lines[j] !== '') {
+      if (firstIdx === -1) firstIdx = j;
+      lastIdx = j;
+    }
+  }
+  if (!runOn && firstIdx >= 0) lines[firstIdx] = open + lines[firstIdx];
+  const appendGap = appendText && /^\w/.test(appendText) ? ' ' : '';
+  lines[lastIdx] += close + appendGap + (appendText ?? '');
+
+  w.endOpenLine();
   const tabs = '\t'.repeat(indent + 1);
   w.withPrefix(tabs, () => {
     w.withPrefix('> ', () => {
-      serializeAmendmentChildren(w, amendment.children);
+      for (const line of lines) {
+        if (line === '') {
+          w.blankLine();
+        } else {
+          w.write(line);
+          w.endLine();
+        }
+      }
     });
   });
 }
@@ -341,13 +398,26 @@ function serializeAmendmentChildren(
 ): void {
   let firstStructuralChild = true;
 
-  for (const child of children) {
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const next = children[i + 1];
     const leading = firstStructuralChild ? 'line' : 'blank';
-    if (child.type === 'division') {
+
+    if (isRunOnAmendment(child, next)) {
+      w.write(child.content);
+      if (!/[\s\u2014\u2013]$/.test(child.content)) w.write(' ');
+      i = consumeRunOnAmendment(w, children, i, 0);
+      firstStructuralChild = false;
+    } else if (child.type === 'division') {
       serializeDivision(w, child, leading);
       firstStructuralChild = false;
     } else if (child.type === 'provision') {
       serializeProvision(w, child, 0, leading);
+      firstStructuralChild = false;
+    } else if (child.type === 'blockAmendment') {
+      const appendText = next?.type === 'appendText' ? next.content : undefined;
+      serializeBlockAmendment(w, child, 0, appendText);
+      if (appendText !== undefined) i++;
       firstStructuralChild = false;
     } else {
       serializeBlock(w, child as Block, 0);
@@ -364,4 +434,29 @@ function applyLeadingSeparator(w: Writer, leading: LeadingSeparator): void {
   } else if (leading === 'line') {
     w.endOpenLine();
   }
+}
+
+function isRunOnAmendment(
+  block: Block | Division | Provision,
+  next: Block | Division | Provision | undefined,
+): block is Text {
+  return block.type === 'text' &&
+    next?.type === 'blockAmendment' &&
+    next.format !== 'none' &&
+    next.children.length > 1 &&
+    next.children[0].type === 'text';
+}
+
+function consumeRunOnAmendment(
+  w: Writer,
+  items: (Block | Division | Provision)[],
+  i: number,
+  indent: number,
+): number {
+  i++;  // advance to the amendment
+  const after = items[i + 1];
+  const appendText = after?.type === 'appendText' ? after.content : undefined;
+  serializeBlockAmendment(w, items[i] as BlockAmendment, indent, appendText, true);
+  if (appendText !== undefined) i++;
+  return i;
 }

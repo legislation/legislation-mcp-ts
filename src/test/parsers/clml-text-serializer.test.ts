@@ -10,7 +10,7 @@ import assert from 'node:assert';
 import { serializeDocument } from '../../parsers/clml-text-serializer.js';
 import type {
   Document, Provision, SubProvision, Paragraph, Division,
-  Schedule, Block, Text, Table, Figure, BlockAmendment, List,
+  Schedule, Block, Text, AppendText, Table, Figure, BlockAmendment, List,
   Footnote, NumberedParagraph,
 } from '../../parsers/clml-types.js';
 
@@ -245,7 +245,7 @@ test('unordered list', () => {
   assert.ok(result.includes('- Second item'), 'Should include second list item');
 });
 
-test('block amendment is indented', () => {
+test('block amendment is indented with block quote and curly double quotes', () => {
   const amendment: BlockAmendment = {
     type: 'blockAmendment',
     children: [
@@ -261,7 +261,7 @@ test('block amendment is indented', () => {
   };
   const result = serializeDocument(doc([prov]));
   assert.ok(result.includes('For section 5 substitute:'), 'Should include intro text');
-  assert.ok(result.includes('\t> 5. New section five text.'), 'Block amendment should be indented with block quote');
+  assert.ok(result.includes('\t> \u201c5. New section five text.\u201d'), 'Block amendment should use curly double quotes');
 });
 
 test('amendment-only provision uses a single line break before amendment content', () => {
@@ -279,7 +279,136 @@ test('amendment-only provision uses a single line break before amendment content
     content: [amendment],
   };
   const result = serializeDocument(doc([prov]));
-  assert.strictEqual(result, '1. \n\t> 5. New section five text.');
+  assert.strictEqual(result, '1. \n\t> \u201c5. New section five text.\u201d');
+});
+
+test('block amendment with format="double" uses curly double quotes', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    format: 'double',
+    children: [{ type: 'provision', number: '3A.', variant: 'leaf', content: [text('New subsection text.')] } as Provision],
+  };
+  const prov: Provision = { type: 'provision', number: '1.', variant: 'leaf', content: [amendment] };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> \u201c3A. New subsection text.\u201d'));
+});
+
+test('block amendment with format="single" uses curly single quotes', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    format: 'single',
+    children: [{ type: 'provision', number: '3A.', variant: 'leaf', content: [text('New subsection text.')] } as Provision],
+  };
+  const prov: Provision = { type: 'provision', number: '1.', variant: 'leaf', content: [amendment] };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> \u20183A. New subsection text.\u2019'));
+});
+
+test('block amendment with format="none" omits quotation marks', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    format: 'none',
+    children: [{ type: 'provision', number: '3A.', variant: 'leaf', content: [text('New subsection text.')] } as Provision],
+  };
+  const prov: Provision = { type: 'provision', number: '1.', variant: 'leaf', content: [amendment] };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> 3A. New subsection text.'));
+  assert.ok(!result.includes('\u201c') && !result.includes('\u201d') && !result.includes('\u2018') && !result.includes('\u2019'));
+});
+
+test('format="none" amendment with run-on structure uses standard path: first Text child stays inside > block', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    format: 'none',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('first item.')] } as Provision,
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('After section 4 insert'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> the following\u2014'), 'first Text child is inside > block');
+  assert.ok(!result.includes('insert\u2014'), 'no run-on: text not glued to lead-in');
+  assert.ok(!result.includes('insertthe'), 'no run-on: text not glued to lead-in without space');
+});
+
+test('run-on amendment with AppendText: open quote before lead-in, close quote with AppendText on last line', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('first item;')] } as Provision,
+      { type: 'provision', number: '(b)', variant: 'leaf', content: [text('second item.')] } as Provision,
+    ],
+  };
+  const appendTextBlock: AppendText = { type: 'appendText', content: ';' };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('For paragraph (a) substitute'), amendment, appendTextBlock],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('substitute \u201cthe following\u2014'), 'open quote before lead-in');
+  assert.ok(result.includes('second item.\u201d;'), 'close quote and AppendText on last line');
+  assert.ok(!result.includes('\t> \u201c'), 'no open quote inside > block');
+});
+
+test('run-on amendment without AppendText: open quote before lead-in, close quote on last line', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('only item.')] } as Provision,
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('For paragraph (a) substitute'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('substitute \u201cthe following\u2014'), 'open quote before lead-in');
+  assert.ok(result.includes('only item.\u201d'), 'close quote on last line');
+  assert.ok(!result.includes('\t> \u201c'), 'no open quote inside > block');
+});
+
+test('single-Text-child amendment is standard case: both marks inside > block', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [{ type: 'text', content: 'any reference to a designated person.' } as Text],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('Omit subsection (2)\u2014'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> \u201cany reference to a designated person.\u201d'), 'both marks inside > block');
+  assert.ok(!result.includes('(2)\u2014\u201c'), 'no mark on provision line');
+});
+
+test('in nested amendment, run-on pair followed by provision gets blank-line separator', () => {
+  const innerAmendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'the following\u2014' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('inserted item.')] } as Provision,
+    ],
+  };
+  const outerAmendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'after section 4 insert' } as Text,
+      innerAmendment,
+      { type: 'provision', number: '5.', variant: 'leaf', content: [text('Existing section.')] } as Provision,
+    ],
+  };
+  const prov: Provision = { type: 'provision', number: '1.', variant: 'leaf', content: [outerAmendment] };
+  const result = serializeDocument(doc([prov]));
+  const lines = result.split('\n');
+  const idx = lines.findIndex(l => l.includes('5. Existing section.'));
+  assert.ok(idx > 0, 'provision 5. should appear');
+  assert.strictEqual(lines[idx - 1].trim(), '>', 'blank-line separator before provision following run-on pair');
 });
 
 test('footnotes with number and content', () => {
