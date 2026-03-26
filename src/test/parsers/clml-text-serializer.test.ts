@@ -579,6 +579,37 @@ test('empty numbered paragraph does not collapse into following block', () => {
   assert.ok(result.includes('Following text.'), 'following text is still present');
 });
 
+test('unnumbered interstitial paragraph with list does not emit a spurious blank line', () => {
+  const list: List = { type: 'list', ordered: false, items: [[text('list item')]] };
+  const interstitial: Paragraph = { type: 'paragraph', number: '', variant: 'leaf', content: [list] };
+  const sub: SubProvision = {
+    type: 'subProvision', number: '(1)', variant: 'branch',
+    intro: [text('Sub intro.')], children: [interstitial], wrapUp: [],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'branch',
+    intro: [text('Provision intro.')], children: [sub], wrapUp: [],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. Provision intro.\n(1) Sub intro.\n\t\t- list item');
+});
+
+test('multi-paragraph textual amendment is not treated as run-on', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'First paragraph.' } as Text,
+      { type: 'text', content: 'Second paragraph.' } as Text,
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('After section 4 insert'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. After section 4 insert\n\t> \u201cFirst paragraph.\n\t> Second paragraph.\u201d');
+});
+
 test('amendment-only list item: bullet on its own line, then quoted block on next', () => {
   const amendment: BlockAmendment = {
     type: 'blockAmendment',

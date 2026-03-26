@@ -145,8 +145,10 @@ function serializeParagraph(w: Writer, para: Paragraph, indent: number): void {
   if (para.number) {
     w.write(`${'\t'.repeat(indent)}${para.number} `);
   } else if (indent > 0) {
-    // No number but still indent so interstitial content aligns with numbered siblings.
-    w.write('\t'.repeat(indent));
+    // No number: apply the indent as a Writer prefix so blocks that open with
+    // endOpenLine() (lists, amendments) don't flush a bare-tab line.
+    w.withPrefix('\t'.repeat(indent), () => serializeParagraph(w, para, 0));
+    return;
   }
 
   if (para.variant === 'leaf') {
@@ -507,7 +509,8 @@ function isRunOnAmendment(
     next?.type === 'blockAmendment' &&
     next.format !== 'none' &&
     next.children.length > 1 &&
-    next.children[0].type === 'text';
+    next.children[0].type === 'text' &&
+    (next.children[1].type === 'provision' || next.children[1].type === 'division');
 }
 
 function consumeRunOnAmendment(
