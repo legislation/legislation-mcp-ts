@@ -579,6 +579,29 @@ test('empty numbered paragraph does not collapse into following block', () => {
   assert.ok(result.includes('Following text.'), 'following text is still present');
 });
 
+test('amendment-only list item: bullet on its own line, then quoted block on next', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'provision', number: '5.', variant: 'leaf', content: [text('New text.')] } as Provision,
+    ],
+  };
+  const list: List = { type: 'list', ordered: false, items: [[amendment]] };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('Items:'), list],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. Items:\n\t-\n\t  \t> \u201c5. New text.\u201d');
+});
+
+test('sibling P2 provisions in a fragment body have no blank line between them', () => {
+  const prov1: Provision = { type: 'provision', number: '(1)', level: 2, variant: 'leaf', content: [text('First subsection.')] };
+  const prov2: Provision = { type: 'provision', number: '(2)', level: 2, variant: 'leaf', content: [text('Second subsection.')] };
+  const result = serializeDocument(doc([prov1, prov2]));
+  assert.strictEqual(result, '(1) First subsection.\n(2) Second subsection.');
+});
+
 // --- Smart quotes ---
 
 test('smart quote spacing is cleaned up', () => {

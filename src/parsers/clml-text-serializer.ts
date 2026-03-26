@@ -61,7 +61,8 @@ function serializeBody(w: Writer, nodes: (Division | Provision | Block)[]): void
     if (node.type === 'division') {
       serializeDivision(w, node);
     } else if (node.type === 'provision') {
-      serializeProvision(w, node, 0);
+      const leading: LeadingSeparator = (node.level ?? 0) >= 2 ? 'line' : 'blank';
+      serializeProvision(w, node, 0, leading);
     } else if (isRunOnAmendment(node, next)) {
       w.write(node.content);
       if (!/[\s\u2014\u2013]$/.test(node.content)) w.write(' ');
@@ -315,11 +316,16 @@ function serializeListItem(w: Writer, item: Block[], indent: number): void {
 
   const flushRun = (): void => {
     if (run.length === 0) return;
-    const first = wroteBullet ? '  ' : '- ';
     w.withPrefix(tabs, () => {
-      w.withHanging(first, '  ', () => {
-        serializeBlocks(w, run, indent);
-      });
+      if (!wroteBullet && run[0].type === 'blockAmendment') {
+        // Hanging '- ' would merge with the amendment's first line; emit a separate bullet first.
+        w.write('-');
+        w.endLine();
+        w.withPrefix('  ', () => { serializeBlocks(w, run, indent); });
+      } else {
+        const first = wroteBullet ? '  ' : '- ';
+        w.withHanging(first, '  ', () => { serializeBlocks(w, run, indent); });
+      }
     });
     run.length = 0;
     wroteBullet = true;
