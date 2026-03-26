@@ -281,6 +281,40 @@ test('unordered list keeps block amendment prefixes within the hanging indent', 
   assert.strictEqual(result, '1. The following item applies:\n\t- After section 4 insert\n\t  \t> \u201c5. Amendment text.\u201d');
 });
 
+test('nested list renders at the next structural depth, not under outer continuation padding', () => {
+  const inner: List = {
+    type: 'list', ordered: false,
+    items: [[text('inner item')]],
+  };
+  const outer: List = {
+    type: 'list', ordered: false,
+    items: [[text('outer item'), inner]],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('The following item applies:'), outer],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. The following item applies:\n\t- outer item\n\t\t- inner item');
+});
+
+test('text after a nested list resumes at the outer item continuation indent', () => {
+  const inner: List = {
+    type: 'list', ordered: false,
+    items: [[text('inner item')]],
+  };
+  const outer: List = {
+    type: 'list', ordered: false,
+    items: [[text('outer item'), inner, text('after inner list')]],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('The following item applies:'), outer],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.strictEqual(result, '1. The following item applies:\n\t- outer item\n\t\t- inner item\n\t  after inner list');
+});
+
 test('block amendment is indented with block quote and curly double quotes', () => {
   const amendment: BlockAmendment = {
     type: 'blockAmendment',

@@ -291,18 +291,50 @@ function serializeBlockAmendment(
 }
 
 function serializeList(w: Writer, list: List, indent: number): void {
-  // Lists are line-oriented layout. The bullet and continuation spacing must apply
-  // to every rendered line of the item, so they belong to Writer prefixes rather
-  // than string-flattened item output.
   w.endOpenLine();
-  const tabs = '\t'.repeat(indent + 1);
   for (const item of list.items) {
+    serializeListItem(w, item, indent);
+  }
+}
+
+function serializeListItem(w: Writer, item: Block[], indent: number): void {
+  // Non-list blocks are batched into runs and written inside withHanging so the
+  // bullet and continuation spacing apply to every rendered line. Nested lists
+  // break out of the hanging scope and recurse at the next structural depth.
+  const tabs = '\t'.repeat(indent + 1);
+  let wroteBullet = false;
+  let run: Block[] = [];
+
+  const writeBullet = (): void => {
+    w.withPrefix(tabs, () => { w.write('-'); w.endLine(); });
+    wroteBullet = true;
+  };
+
+  const flushRun = (): void => {
+    if (run.length === 0) return;
+    const first = wroteBullet ? '  ' : '- ';
     w.withPrefix(tabs, () => {
-      w.withHanging('- ', '  ', () => {
-        serializeBlocks(w, item, indent);
+      w.withHanging(first, '  ', () => {
+        serializeBlocks(w, run, indent);
       });
     });
+    run.length = 0;
+    wroteBullet = true;
+  };
+
+  if (item.length === 0) { writeBullet(); return; }
+
+  for (const block of item) {
+    if (block.type === 'list') {
+      flushRun();
+      if (!wroteBullet) writeBullet();
+      serializeList(w, block, indent + 1);
+    } else {
+      run.push(block);
+    }
   }
+
+  flushRun();
 }
 
 function serializeNumberedParagraph(w: Writer, np: NumberedParagraph): void {
