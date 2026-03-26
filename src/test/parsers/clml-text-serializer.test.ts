@@ -537,6 +537,14 @@ test('numbered paragraph', () => {
   assert.ok(result.includes('(1) The protection of natural persons is a fundamental right.'), 'Should format with number');
 });
 
+test('empty numbered paragraph does not collapse into following block', () => {
+  const np: NumberedParagraph = { type: 'numberedParagraph', number: '(1)', children: [] };
+  const result = serializeDocument(doc([], { prelims: [np, text('Following text.')] }));
+  assert.ok(!result.includes('(1) Following text.'), 'number and following text must be on separate lines');
+  assert.ok(result.includes('(1)'), 'number is still present');
+  assert.ok(result.includes('Following text.'), 'following text is still present');
+});
+
 // --- Smart quotes ---
 
 test('smart quote spacing is cleaned up', () => {

@@ -308,6 +308,7 @@ function serializeList(w: Writer, list: List, indent: number): void {
 function serializeNumberedParagraph(w: Writer, np: NumberedParagraph): void {
   w.write(`${np.number} `);
   serializeBlocks(w, np.children, 0);
+  w.endOpenLine();
 }
 
 // --- Writer ---
