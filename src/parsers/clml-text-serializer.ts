@@ -143,6 +143,9 @@ function serializeSubProvision(w: Writer, sub: SubProvision, indent: number): vo
 function serializeParagraph(w: Writer, para: Paragraph, indent: number): void {
   if (para.number) {
     w.write(`${'\t'.repeat(indent)}${para.number} `);
+  } else if (indent > 0) {
+    // No number but still indent so interstitial content aligns with numbered siblings.
+    w.write('\t'.repeat(indent));
   }
 
   if (para.variant === 'leaf') {

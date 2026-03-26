@@ -514,6 +514,75 @@ test('BlockAmendment with sibling P2 children keeps inserted subsections contigu
   assert.notStrictEqual(lines[thirdIdx - 1], '>', 'Should not insert a blank quoted line before later sibling P2 content');
 });
 
+test('P3 with interstitial text between P4 children renders text at paragraph depth, not flush-left', () => {
+  // parseProvisionAtAnyLevel must wrap interstitial blocks as 'paragraph' (not 'subProvision')
+  // for level >= 3, otherwise the text appears at P2 depth (no indent) instead of P3 depth.
+  const xml = `
+    <BlockAmendment>
+      <P3>
+        <Pnumber>(a)</Pnumber>
+        <P3para>
+          <Text>Intro text.</Text>
+          <P4><Pnumber>(i)</Pnumber><P4para><Text>First sub-paragraph.</Text></P4para></P4>
+          <Text>Interstitial text.</Text>
+          <P4><Pnumber>(ii)</Pnumber><P4para><Text>Second sub-paragraph.</Text></P4para></P4>
+        </P3para>
+      </P3>
+    </BlockAmendment>`;
+
+  const result = parseToText(xml);
+  const lines = result.split('\n');
+  const interstitialLine = lines.find(l => l.includes('Interstitial text.'));
+  const firstSubLine = lines.find(l => l.includes('First sub-paragraph.'));
+
+  assert.ok(interstitialLine, 'Interstitial text should appear in output');
+  assert.ok(firstSubLine, 'First sub-paragraph should appear in output');
+  // Interstitial text should be indented at least as deeply as the P4 sub-paragraphs
+  const interstitialIndent = interstitialLine!.match(/^\t*/)?.[0].length ?? 0;
+  const subParaIndent = firstSubLine!.match(/^\t*/)?.[0].length ?? 0;
+  assert.ok(interstitialIndent >= subParaIndent, 'Interstitial text should not appear flush-left relative to sub-paragraphs');
+});
+
+test('fragment root P3 keeps interstitial text at paragraph depth between P4 children', () => {
+  const xml = `
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+                 xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+                 xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <ukm:Metadata>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/1/a</dc:identifier>
+      </ukm:Metadata>
+      <Primary>
+        <Body>
+          <P1 id="section-1">
+            <Pnumber>1</Pnumber>
+            <P1para>
+              <P2>
+                <Pnumber>1</Pnumber>
+                <P2para>
+                  <P3 id="section-1-a">
+                    <Pnumber>a</Pnumber>
+                    <P3para>
+                      <Text>Intro text.</Text>
+                      <P4><Pnumber>i</Pnumber><P4para><Text>First sub-paragraph.</Text></P4para></P4>
+                      <Text>Interstitial text.</Text>
+                      <P4><Pnumber>ii</Pnumber><P4para><Text>Second sub-paragraph.</Text></P4para></P4>
+                    </P3para>
+                  </P3>
+                </P2para>
+              </P2>
+            </P1para>
+          </P1>
+        </Body>
+      </Primary>
+    </Legislation>`;
+
+  const result = parseToText(xml);
+  assert.strictEqual(
+    result,
+    '(a) Intro text.\n\t(i) First sub-paragraph.\n\tInterstitial text.\n\t(ii) Second sub-paragraph.',
+  );
+});
+
 test('Schedules wrapper with Title (title dropped)', () => {
   const xml = `
     <Schedules>

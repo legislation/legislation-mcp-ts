@@ -265,10 +265,17 @@ function parseProvisionAtAnyLevel(el: Element, level: number): Provision {
     ? (child: Element) => parseSubOrParagraph(child)
     : (child: Element) => parseParagraphElement(child);
 
+  // Interstitial blocks between child elements must be wrapped at the correct type:
+  // P2 uses subProvision (rendered at P2 depth); P3+ uses paragraph (rendered at paragraph depth).
+  const wrapInterstitial = (blocks: Block[]): SubProvision | Paragraph =>
+    level >= 3
+      ? { type: 'paragraph', number: '', variant: 'leaf', content: blocks } as Paragraph
+      : { type: 'subProvision', number: '', variant: 'leaf', content: blocks } as SubProvision;
+
   return buildLeafOrBranch(
     flattenProvisionContent(el, paraTag),
     childParser,
-    (blocks) => ({ type: 'subProvision', number: '', variant: 'leaf', content: blocks }) as SubProvision,
+    wrapInterstitial,
     (variant) => {
       if (variant.kind === 'leaf') {
         return { type: 'provision', number, level, variant: 'leaf', content: variant.blocks } as Provision;
