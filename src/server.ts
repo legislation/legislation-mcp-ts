@@ -35,6 +35,13 @@ const apiClient = new LegislationClient();
 const lexClient = new LexClient();
 const resourceLoader = new ResourceLoader();
 
+const toolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
 /**
  * Creates a configured MCP server instance.
  */
@@ -60,47 +67,56 @@ export function createServer(): Server {
           name: searchLegislation.name,
           description: searchLegislation.description,
           inputSchema: searchLegislation.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: getLegislationMetadata.name,
           description: getLegislationMetadata.description,
           inputSchema: getLegislationMetadata.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: getLegislation.name,
           description: getLegislation.description,
           inputSchema: getLegislation.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: getLegislationFragment.name,
           description: getLegislationFragment.description,
           inputSchema: getLegislationFragment.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: getLegislationTableOfContents.name,
           description: getLegislationTableOfContents.description,
           inputSchema: getLegislationTableOfContents.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: searchLegislationSemantic.name,
           description: searchLegislationSemantic.description,
           inputSchema: searchLegislationSemantic.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: searchLegislationSectionsSemantic.name,
           description: searchLegislationSectionsSemantic.description,
           inputSchema: searchLegislationSectionsSemantic.inputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: searchEffects.name,
           description: searchEffects.description,
           inputSchema: searchEffects.inputSchema,
           outputSchema: searchEffects.outputSchema,
+          annotations: toolAnnotations,
         },
         {
           name: getResource.name,
           description: getResource.description,
           inputSchema: getResource.inputSchema,
+          annotations: toolAnnotations,
         },
       ],
     };
