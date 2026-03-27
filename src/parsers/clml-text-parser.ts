@@ -9,7 +9,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { parseLegislationUri } from '../utils/legislation-uri.js';
 import type {
   Document, Division, DivisionName, Provision, SubProvision,
-  Paragraph, Schedule, Block, Text, AppendText, Table, Figure, BlockAmendment,
+  Paragraph, Schedule, Block, AppendText, Table, Figure, BlockAmendment,
   List, Footnote, NumberedParagraph,
 } from './clml-types.js';
 

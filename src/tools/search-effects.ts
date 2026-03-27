@@ -5,7 +5,7 @@
  */
 
 import { LegislationClient } from "../api/legislation-client.js";
-import { EffectsParser, EffectsResponse } from "../parsers/effects-parser.js";
+import { EffectsParser } from "../parsers/effects-parser.js";
 
 export const name = "search_effects";
 
