@@ -734,6 +734,20 @@ test('top-level AppendText after BlockAmendment is preserved in body sequence', 
   assert.strictEqual(append.content, ', and');
 });
 
+test('empty BlockAmendment does not consume trailing AppendText during serialization', () => {
+  const xml = `
+    <Root>
+      <BlockAmendment>
+        <CommentaryRef Ref="c1"/>
+      </BlockAmendment>
+      <AppendText>;</AppendText>
+    </Root>`;
+
+  const result = parseToText(xml);
+
+  assert.strictEqual(result, ';');
+});
+
 test('parser returns Document type', () => {
   const xml = `<P1><Pnumber>1</Pnumber><P1para><Text>First.</Text></P1para></P1>`;
   const doc = parse(xml);

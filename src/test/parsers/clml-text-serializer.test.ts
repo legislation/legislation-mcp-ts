@@ -524,6 +524,24 @@ test('body-level standalone block amendment consumes AppendText', () => {
   assert.ok(!result.includes('\u201d\n;'), 'AppendText not on its own line');
 });
 
+test('document-initial multiline block amendment preserves first-line indent', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'First paragraph.' } as Text,
+      { type: 'text', content: 'Second paragraph.' } as Text,
+    ],
+  };
+  const document: Document = {
+    type: 'document',
+    prelims: [],
+    body: [amendment],
+    schedules: [],
+  };
+  const result = serializeDocument(document);
+  assert.strictEqual(result, '\t> \u201cFirst paragraph.\n\t> Second paragraph.\u201d');
+});
+
 test('schedule-level run-on amendment: open quote inline, close quote with AppendText attached', () => {
   const amendment: BlockAmendment = {
     type: 'blockAmendment',
@@ -608,6 +626,37 @@ test('multi-paragraph textual amendment is not treated as run-on', () => {
   };
   const result = serializeDocument(doc([prov]));
   assert.strictEqual(result, '1. After section 4 insert\n\t> \u201cFirst paragraph.\n\t> Second paragraph.\u201d');
+});
+
+test('amendment with lead-in text but no trailing dash is not treated as run-on', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [
+      { type: 'text', content: 'New introductory text.' } as Text,
+      { type: 'provision', number: '(a)', variant: 'leaf', content: [text('first item.')] } as Provision,
+    ],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('This section is repealed.'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(result.includes('\t> \u201cNew introductory text.'), 'lead-in inside > block');
+  assert.ok(!result.includes('repealed.\u201c'), 'no run-on with preceding sentence');
+});
+
+test('empty amendment does not emit stray quote marks', () => {
+  const amendment: BlockAmendment = {
+    type: 'blockAmendment',
+    children: [],
+  };
+  const prov: Provision = {
+    type: 'provision', number: '1.', variant: 'leaf',
+    content: [text('For section 5 substitute:'), amendment],
+  };
+  const result = serializeDocument(doc([prov]));
+  assert.ok(!result.includes('> \u201d'), 'no stray close quote');
+  assert.ok(!result.includes('> \u201c'), 'no stray open quote');
 });
 
 test('amendment-only list item: bullet on its own line, then quoted block on next', () => {

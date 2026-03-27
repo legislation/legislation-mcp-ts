@@ -23,6 +23,8 @@ import type {
 
 type LeadingSeparator = 'blank' | 'line';
 
+const LEAD_IN_DASH_RE = /[\u2014\u2013]\s*$/;
+
 const HEADING_MARKS: Record<DivisionName, string> = {
   groupOfParts: '##',
   part: '##',
@@ -40,7 +42,7 @@ export function serializeDocument(doc: Document): string {
   for (const schedule of doc.schedules) {
     serializeSchedule(w, schedule);
   }
-  return smartQuotes(w.toString().trim());
+  return smartQuotes(trimOuterBlankLines(w.toString()).trimEnd());
 }
 
 // --- Prelims ---
@@ -69,8 +71,8 @@ function serializeBody(w: Writer, nodes: (Division | Provision | Block)[]): void
       i = consumeRunOnAmendment(w, nodes, i, 0);
     } else if (node.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;
-      serializeBlockAmendment(w, node, 0, appendText);
-      if (appendText !== undefined) i++;
+      const emitted = serializeBlockAmendment(w, node, 0, appendText);
+      if (emitted && appendText !== undefined) i++;
     } else {
       serializeBlock(w, node as Block, 0);
     }
@@ -195,8 +197,8 @@ function serializeBlocks(w: Writer, blocks: Block[], indent: number): void {
       i = consumeRunOnAmendment(w, blocks, i, indent);
     } else if (block.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;
-      serializeBlockAmendment(w, block, indent, appendText);
-      if (appendText !== undefined) i++;
+      const emitted = serializeBlockAmendment(w, block, indent, appendText);
+      if (emitted && appendText !== undefined) i++;
     } else {
       serializeBlock(w, block, indent);
     }
@@ -246,7 +248,7 @@ function serializeBlockAmendment(
   indent: number,
   appendText?: string,
   runOn?: boolean,
-): void {
+): boolean {
   // Amendments are multiline quoted layout, so their prefixes are replayed through
   // Writer scopes instead of embedding a pre-indented string into the parent.
   const open = amendment.format === 'single' ? '\u2018'
@@ -269,14 +271,15 @@ function serializeBlockAmendment(
   const lines = sub.toString().trimEnd().split('\n');
 
   let firstIdx = -1;
-  let lastIdx = 0;  // fallback to line 0, matching original behaviour for all-empty bodies
+  let lastIdx = 0;
   for (let j = 0; j < lines.length; j++) {
     if (lines[j] !== '') {
       if (firstIdx === -1) firstIdx = j;
       lastIdx = j;
     }
   }
-  if (!runOn && firstIdx >= 0) lines[firstIdx] = open + lines[firstIdx];
+  if (firstIdx === -1) return false;
+  if (!runOn) lines[firstIdx] = open + lines[firstIdx];
   const appendGap = appendText && /^\w/.test(appendText) ? ' ' : '';
   lines[lastIdx] += close + appendGap + (appendText ?? '');
 
@@ -294,6 +297,7 @@ function serializeBlockAmendment(
       }
     });
   });
+  return true;
 }
 
 function serializeList(w: Writer, list: List, indent: number): void {
@@ -457,6 +461,10 @@ function smartQuotes(text: string): string {
     .replace(/ \u201d/g, '\u201d');
 }
 
+function trimOuterBlankLines(text: string): string {
+  return text.replace(/^(?:[ \t]*\n)+/, '');
+}
+
 function serializeAmendmentChildren(
   w: Writer,
   children: (Division | Provision | Block)[],
@@ -481,9 +489,9 @@ function serializeAmendmentChildren(
       firstStructuralChild = false;
     } else if (child.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;
-      serializeBlockAmendment(w, child, 0, appendText);
-      if (appendText !== undefined) i++;
-      firstStructuralChild = false;
+      const emitted = serializeBlockAmendment(w, child, 0, appendText);
+      if (emitted && appendText !== undefined) i++;
+      if (emitted) firstStructuralChild = false;
     } else {
       serializeBlock(w, child as Block, 0);
       if (child.type !== 'appendText') {
@@ -505,12 +513,17 @@ function isRunOnAmendment(
   block: Block | Division | Provision,
   next: Block | Division | Provision | undefined,
 ): block is Text {
-  return block.type === 'text' &&
+  if (!(block.type === 'text' &&
     next?.type === 'blockAmendment' &&
     next.format !== 'none' &&
     next.children.length > 1 &&
     next.children[0].type === 'text' &&
-    (next.children[1].type === 'provision' || next.children[1].type === 'division');
+    (next.children[1].type === 'provision' || next.children[1].type === 'division'))) {
+    return false;
+  }
+  // Only run-on when the amendment's lead-in ends with an em-dash or en-dash —
+  // the standard CLML convention for "the following—" style phrases.
+  return LEAD_IN_DASH_RE.test((next.children[0] as Text).content);
 }
 
 function consumeRunOnAmendment(
