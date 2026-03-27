@@ -24,6 +24,13 @@ import type {
 type LeadingSeparator = 'blank' | 'line';
 
 const LEAD_IN_DASH_RE = /[\u2014\u2013]\s*$/;
+const TRAILING_SPACE_OR_DASH_RE = /[\s\u2014\u2013]$/;
+
+const QUOTE_MARKS: Record<string, { open: string; close: string }> = {
+  single: { open: '\u2018', close: '\u2019' },
+  double: { open: '\u201c', close: '\u201d' },
+  none:   { open: '',       close: ''       },
+};
 
 const HEADING_MARKS: Record<DivisionName, string> = {
   groupOfParts: '##',
@@ -67,7 +74,7 @@ function serializeBody(w: Writer, nodes: (Division | Provision | Block)[]): void
       serializeProvision(w, node, 0, leading);
     } else if (isRunOnAmendment(node, next)) {
       w.write(node.content);
-      if (!/[\s\u2014\u2013]$/.test(node.content)) w.write(' ');
+      if (!TRAILING_SPACE_OR_DASH_RE.test(node.content)) w.write(' ');
       i = consumeRunOnAmendment(w, nodes, i, 0);
     } else if (node.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;
@@ -193,7 +200,7 @@ function serializeBlocks(w: Writer, blocks: Block[], indent: number): void {
     const next = blocks[i + 1];
     if (isRunOnAmendment(block, next)) {
       w.write(block.content);
-      if (!/[\s\u2014\u2013]$/.test(block.content)) w.write(' ');
+      if (!TRAILING_SPACE_OR_DASH_RE.test(block.content)) w.write(' ');
       i = consumeRunOnAmendment(w, blocks, i, indent);
     } else if (block.type === 'blockAmendment') {
       const appendText = next?.type === 'appendText' ? next.content : undefined;
@@ -251,12 +258,7 @@ function serializeBlockAmendment(
 ): boolean {
   // Amendments are multiline quoted layout, so their prefixes are replayed through
   // Writer scopes instead of embedding a pre-indented string into the parent.
-  const open = amendment.format === 'single' ? '\u2018'
-    : amendment.format === 'none' ? ''
-    : '\u201c';
-  const close = amendment.format === 'single' ? '\u2019'
-    : amendment.format === 'none' ? ''
-    : '\u201d';
+  const { open, close } = QUOTE_MARKS[amendment.format ?? 'double'];
 
   let bodyChildren: (Division | Provision | Block)[];
   if (runOn && amendment.children[0].type === 'text') {
@@ -478,7 +480,7 @@ function serializeAmendmentChildren(
 
     if (isRunOnAmendment(child, next)) {
       w.write(child.content);
-      if (!/[\s\u2014\u2013]$/.test(child.content)) w.write(' ');
+      if (!TRAILING_SPACE_OR_DASH_RE.test(child.content)) w.write(' ');
       i = consumeRunOnAmendment(w, children, i, 0);
       firstStructuralChild = false;
     } else if (child.type === 'division') {
