@@ -44,6 +44,10 @@ export const inputSchema = {
       type: "string",
       description: "Number of the affected (target) legislation",
     },
+    applied: {
+      type: "boolean",
+      description: "Filter by applied status: true for effects already applied to the revised text, false for unapplied effects",
+    },
     page: {
       type: "number",
       description: "Page number for paginated results (default: 1)",
@@ -153,11 +157,12 @@ export async function execute(
     targetType?: string;
     targetYear?: string;
     targetNumber?: string;
+    applied?: boolean;
     page?: number;
   },
   client: LegislationClient
 ) {
-  const { sourceType, sourceYear, sourceNumber, targetType, targetYear, targetNumber, page } = args;
+  const { sourceType, sourceYear, sourceNumber, targetType, targetYear, targetNumber, applied, page } = args;
 
   const hasAnyParam = sourceType || sourceYear || sourceNumber || targetType || targetYear || targetNumber;
 
@@ -180,6 +185,7 @@ export async function execute(
     affectedType: targetType,
     affectedYear: targetYear,
     affectedNumber: targetNumber,
+    applied,
     page,
   });
 

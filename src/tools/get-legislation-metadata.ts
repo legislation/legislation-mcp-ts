@@ -5,9 +5,9 @@
  */
 
 import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
-import { EffectsParser } from "../parsers/effects-parser.js";
 import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect } from "../parsers/metadata-parser.js";
 import { contains } from "../utils/section-range-containment.js";
+import { fetchAllEffects } from "./up-to-date-callout.js";
 
 export const name = "get_legislation_metadata";
 
@@ -80,8 +80,10 @@ export async function execute(
 
   // Enacted/made versions (status "final") never contain unapplied effects in
   // the XML, even when outstanding effects exist. When the caller asked for the
-  // current version and received an enacted/made version (because no revised
-  // version exists yet), fetch effects from the changes API instead.
+  // current version and received an enacted/made version, no revised version
+  // exists yet, so there cannot be any already-applied effects: anything
+  // returned by /changes is necessarily still unapplied to the text.
+  // Fetch effects from the changes API instead.
   if (!version && metadata.status === 'final') {
     try {
       await enrichWithEffects(metadata, client, fragment);
@@ -112,24 +114,7 @@ async function enrichWithEffects(
   client: LegislationClient,
   fragment?: string
 ) {
-  const effectsParser = new EffectsParser();
-  const welsh = metadata.language === 'welsh';
-  const allEffects: UnappliedEffect[] = [];
-  let page = 1;
-
-  while (true) {
-    const xml = await client.searchChanges({
-      affectedType: metadata.type,
-      affectedYear: String(metadata.year),
-      affectedNumber: String(metadata.number),
-      page,
-    });
-    const result = effectsParser.parse(xml, welsh);
-    allEffects.push(...result.effects);
-    if (!result.meta.morePages) break;
-    page++;
-  }
-
+  const allEffects = await fetchAllEffects(metadata, client);
   const effects = fragment
     ? filterEffectsForFragment(allEffects, fragment)
     : allEffects;

@@ -7,6 +7,7 @@
 import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
 import { parse } from "../parsers/clml-text-parser.js";
 import { serializeDocument } from "../parsers/clml-text-serializer.js";
+import { getUpToDateCallout } from "./up-to-date-callout.js";
 
 export const name = "get_legislation";
 
@@ -77,14 +78,16 @@ export async function execute(
       ? serializeDocument(parse(result.content))
       : result.content;
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: content,
-        },
-      ],
-    };
+    const contentBlocks: { type: "text"; text: string }[] = [];
+
+    if (format === "text") {
+      const callout = await getUpToDateCallout(result.content, version, client);
+      if (callout) contentBlocks.push(callout);
+    }
+
+    contentBlocks.push({ type: "text", text: content });
+
+    return { content: contentBlocks };
   } catch (error) {
     if (error instanceof Error) {
       return {

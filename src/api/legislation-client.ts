@@ -154,6 +154,7 @@ export class LegislationClient {
     affectedType?: string;
     affectedYear?: string;
     affectedNumber?: string;
+    applied?: boolean;
     page?: number;
   }): Promise<string> {
     const queryParams = new URLSearchParams();
@@ -169,6 +170,7 @@ export class LegislationClient {
       queryParams.append("affecting-year", params.affectingYear);
     }
     if (params.affectingNumber) queryParams.append("affecting-number", params.affectingNumber);
+    if (params.applied !== undefined) queryParams.append("applied", params.applied ? "applied" : "unapplied");
     if (params.page && params.page > 1) queryParams.append("page", String(params.page));
 
     const url = `${this.baseUrl}/changes/data.feed?${queryParams.toString()}`;
