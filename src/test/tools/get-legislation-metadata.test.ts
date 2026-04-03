@@ -1,11 +1,12 @@
 /**
- * Tests for get-legislation-metadata helpers
+ * Tests for get-legislation-metadata helpers and endpoint selection
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { filterEffectsForFragment } from '../../tools/get-legislation-metadata.js';
 import { UnappliedEffect } from '../../parsers/metadata-parser.js';
+import * as metadata from '../../tools/get-legislation-metadata.js';
 
 /** Minimal effect stub with only the fields filterEffectsForFragment inspects. */
 function effect(refs: UnappliedEffect['target']['refs']): UnappliedEffect {
@@ -88,4 +89,58 @@ test('filterEffectsForFragment: mixed effects filtered correctly', () => {
   ];
   const filtered = filterEffectsForFragment(effects, 'section/2');
   assert.strictEqual(filtered.length, 2, 'Should keep section-2 match and whole-act effect');
+});
+
+// --- Endpoint selection tests ---
+
+const MINIMAL_XML = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+test('execute uses getDocumentMetadata for unversioned whole-document requests', async () => {
+  const calls: string[] = [];
+  const client = {
+    getDocumentMetadata: async () => { calls.push('getDocumentMetadata'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getDocument: async () => { calls.push('getDocument'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getFragment: async () => { calls.push('getFragment'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    searchChanges: async () => { throw new Error('not expected'); },
+  };
+  await metadata.execute({ type: 'ukpga', year: '2020', number: '2' }, client as any);
+  assert.deepStrictEqual(calls, ['getDocumentMetadata']);
+});
+
+test('execute uses getDocument for versioned whole-document requests', async () => {
+  const calls: string[] = [];
+  const client = {
+    getDocumentMetadata: async () => { calls.push('getDocumentMetadata'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getDocument: async () => { calls.push('getDocument'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getFragment: async () => { calls.push('getFragment'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    searchChanges: async () => { throw new Error('not expected'); },
+  };
+  await metadata.execute({ type: 'ukpga', year: '2020', number: '2', version: 'enacted' }, client as any);
+  assert.deepStrictEqual(calls, ['getDocument']);
+});
+
+test('execute uses getFragment for fragment requests', async () => {
+  const calls: string[] = [];
+  const client = {
+    getDocumentMetadata: async () => { calls.push('getDocumentMetadata'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getDocument: async () => { calls.push('getDocument'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    getFragment: async () => { calls.push('getFragment'); return { kind: 'document' as const, content: MINIMAL_XML }; },
+    searchChanges: async () => { throw new Error('not expected'); },
+  };
+  await metadata.execute({ type: 'ukpga', year: '2020', number: '2', fragment: 'section/1' }, client as any);
+  assert.deepStrictEqual(calls, ['getFragment']);
 });

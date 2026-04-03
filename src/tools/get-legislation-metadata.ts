@@ -15,7 +15,7 @@ export const description = `Retrieve structured metadata for a UK legislation do
 
 \`type\`, \`year\`, and \`number\` must be exact — use search_legislation to confirm if unsure.
 
-Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\` (\`draft\`/\`final\`/\`revised\`/\`proposed\`), \`extent\` (e.g. \`["E","W","S","NI"]\`), key dates (\`enactmentDate\`/\`madeDate\`), and \`unappliedEffects\` (amendments enacted but not yet applied to the text).
+Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\` (\`draft\`/\`final\`/\`revised\`/\`proposed\`), \`extent\` (e.g. \`["E","W","S","NI"]\`), key dates (\`enactmentDate\`/\`madeDate\`), \`versions\` (available version labels, usable as the \`version\` parameter), and \`unappliedEffects\` (amendments enacted but not yet applied to the text).
 
 \`unappliedEffects\` and \`upToDate\` are only present for the latest version (no \`version\` parameter). When a specific version is requested, both fields are omitted — effects are not tracked for point-in-time snapshots. For the latest version, \`upToDate\` is \`true\` when all in-force effects have been applied, \`false\` when some are outstanding.
 
@@ -65,10 +65,16 @@ export async function execute(
 ) {
   const { type, year, number, version, fragment } = args;
 
-  // Fetch metadata XML — use fragment endpoint when scoping to a specific provision
+  // Fetch metadata XML.
+  // - Fragment requests use the fragment endpoint (full CLML including metadata).
+  // - Versioned requests use the full document endpoint because /resources/data.xml
+  //   does not support version paths.
+  // - Unversioned whole-document requests use the lightweight metadata-only endpoint.
   const result = fragment
     ? await client.getFragment(type, year, number, fragment, { format: "xml", version })
-    : await client.getDocumentMetadata(type, year, number, { version });
+    : version
+      ? await client.getDocument(type, year, number, { format: "xml", version })
+      : await client.getDocumentMetadata(type, year, number, {});
 
   if (result.kind === "disambiguation") {
     return formatDisambiguation(result);
@@ -78,19 +84,26 @@ export async function execute(
   const parser = new MetadataParser();
   const metadata = parser.parse(result.content);
 
-  // Enacted/made versions (status "final") never contain unapplied effects in
-  // the XML, even when outstanding effects exist. When the caller asked for the
-  // current version and received an enacted/made version, no revised version
-  // exists yet, so there cannot be any already-applied effects: anything
-  // returned by /changes is necessarily still unapplied to the text.
-  // Fetch effects from the changes API instead.
-  if (!version && metadata.status === 'final') {
-    try {
-      await enrichWithEffects(metadata, client, fragment);
-    } catch {
-      // Effects search failed — return metadata without effects rather than failing entirely
-      metadata.unappliedEffects = undefined;
-      metadata.upToDate = undefined;
+  if (version) {
+    // Versioned requests: suppress fields that are only meaningful for unversioned requests
+    metadata.versions = undefined;
+    metadata.unappliedEffects = undefined;
+    metadata.upToDate = undefined;
+  } else {
+    // Enacted/made versions (status "final") never contain unapplied effects in
+    // the XML, even when outstanding effects exist. When the caller asked for the
+    // current version and received an enacted/made version, no revised version
+    // exists yet, so there cannot be any already-applied effects: anything
+    // returned by /changes is necessarily still unapplied to the text.
+    // Fetch effects from the changes API instead.
+    if (metadata.status === 'final') {
+      try {
+        await enrichWithEffects(metadata, client, fragment);
+      } catch {
+        // Effects search failed — return metadata without effects rather than failing entirely
+        metadata.unappliedEffects = undefined;
+        metadata.upToDate = undefined;
+      }
     }
   }
 
@@ -100,7 +113,7 @@ export async function execute(
         type: "text",
         text: JSON.stringify(metadata, null, 2)
       }
-    ]
+    ],
   };
 }
 

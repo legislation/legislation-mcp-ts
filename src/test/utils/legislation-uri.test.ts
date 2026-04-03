@@ -114,6 +114,42 @@ test("parses URI with made version", () => {
   });
 });
 
+test("parses URI with prospective version", () => {
+  const result = parseLegislationUri("ukpga/2020/2/prospective");
+  assert.deepStrictEqual(result, {
+    type: "ukpga",
+    year: "2020",
+    number: "2",
+    fragment: undefined,
+    version: "prospective",
+    language: undefined,
+  });
+});
+
+test("parses URI with current version", () => {
+  const result = parseLegislationUri("ukpga/2020/2/current");
+  assert.deepStrictEqual(result, {
+    type: "ukpga",
+    year: "2020",
+    number: "2",
+    fragment: undefined,
+    version: "current",
+    language: undefined,
+  });
+});
+
+test("parses URI with fragment and prospective version", () => {
+  const result = parseLegislationUri("ukpga/2020/2/section/1/prospective");
+  assert.deepStrictEqual(result, {
+    type: "ukpga",
+    year: "2020",
+    number: "2",
+    fragment: "section/1",
+    version: "prospective",
+    language: undefined,
+  });
+});
+
 // Fragments
 
 test("parses URI with section fragment", () => {

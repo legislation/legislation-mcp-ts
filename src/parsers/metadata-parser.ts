@@ -7,7 +7,8 @@
 
 import { XMLParser } from 'fast-xml-parser';
 import { parseLegislationUri } from '../utils/legislation-uri.js';
-import { longToShortTypeMap } from '../utils/type-codes.js';
+import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
+import { compareVersions } from '../utils/version-sort.js';
 
 /**
  * Structured metadata extracted from legislation
@@ -33,6 +34,13 @@ export interface LegislationMetadata {
   // Version/language of this response (if URI included them)
   version?: string;        // e.g., "enacted", "2024-01-01"
   language?: string;       // "english" or "welsh"
+
+  // Whether the content is prospective (not yet in force)
+  prospective?: boolean;
+
+  // Available versions (values usable as the version parameter)
+  // Only present for unversioned requests — like upToDate and unappliedEffects
+  versions?: string[];
 
   // Additional metadata
   isbn?: string;            // TODO: Extract from metadata
@@ -103,13 +111,13 @@ export class MetadataParser {
   }
 
   /**
-   * Parse XML metadata into structured JSON
+   * Parse XML metadata into structured JSON.
+   * Always populates all fields. The caller is responsible for suppressing
+   * fields that are not meaningful for the request context (e.g. versions
+   * and unappliedEffects for versioned requests).
    */
   parse(xml: string): LegislationMetadata {
     const obj = this.parser.parse(xml);
-
-    // Debug: uncomment to see full structure
-    // console.error(JSON.stringify(obj, null, 2));
 
     // Navigate to root Legislation element
     const legislation = obj.Legislation;
@@ -122,13 +130,15 @@ export class MetadataParser {
     const shortType = longToShortTypeMap.get(longType) || '';
 
     const parsed = this.parseDocumentUri(legislation);
+    const status = this.extractStatus(legislation);
 
-    const unappliedEffects = !parsed.version
-      ? this.parseUnappliedEffects(legislation, parsed.language)
-      : undefined;
-    const upToDate = unappliedEffects
-      ? !unappliedEffects.some(e => e.outstanding)
-      : undefined;
+    const unappliedEffects = this.parseUnappliedEffects(legislation, parsed.language);
+    const upToDate = !unappliedEffects.some(e => e.outstanding);
+
+    const fragmentId = this.extractFragmentId(legislation);
+    const prospective = this.extractProspective(legislation, fragmentId);
+
+    const versions = this.extractVersions(legislation, shortType, status, prospective);
 
     return {
       id: parsed.id,
@@ -136,12 +146,14 @@ export class MetadataParser {
       year: this.extractYear(legislation),
       number: this.extractNumber(legislation),
       title: this.extractTitle(legislation),
-      status: this.extractStatus(legislation),
+      status,
       extent: this.extractExtent(legislation),
       enactmentDate: this.extractEnactmentDate(legislation),
       madeDate: this.extractMadeDate(legislation),
       version: parsed.version,
       language: parsed.language,
+      prospective: prospective || undefined,
+      versions,
       upToDate,
       unappliedEffects,
     };
@@ -219,6 +231,138 @@ export class MetadataParser {
     const metadata = legislation?.Metadata;
     const typeMetadata = metadata?.PrimaryMetadata || metadata?.SecondaryMetadata || metadata?.EUMetadata;
     return typeMetadata?.DocumentClassification?.DocumentStatus?.['@_Value'];
+  }
+
+  private static readonly HAS_VERSION_REL = 'http://purl.org/dc/terms/hasVersion';
+  private static readonly REPEALED_SUFFIX = ' repealed';
+
+  /**
+   * Build a sorted list of available version labels from atom:link[@rel='dct:hasVersion'].
+   *
+   * Normalisation steps:
+   *  1. Collect title attributes from hasVersion links.
+   *  2. Strip trailing " repealed" suffixes (e.g. "2020-01-01 repealed" → "2020-01-01").
+   *  3. Remove "current" (an alias, not a real version label).
+   *  4. For final-status documents, ensure the first-version keyword is present.
+   *  5. If prospective and dct:valid is present, add the dct:valid date.
+   *  6. Sort: first-version keywords first, then dates chronologically, then any
+   *     remaining labels (e.g. "prospective" if it appeared in the raw links).
+   *
+   * Only called for unversioned requests (versions is undefined for versioned requests).
+   */
+  private extractVersions(
+    legislation: any,
+    shortType: string,
+    status: string | undefined,
+    prospective: boolean
+  ): string[] {
+    const metadata = legislation?.Metadata;
+    const labels = new Set<string>();
+
+    const links = metadata?.link;
+    if (links) {
+      const linkList = Array.isArray(links) ? links : [links];
+      for (const link of linkList) {
+        if (link['@_rel'] !== MetadataParser.HAS_VERSION_REL) continue;
+        let title: string = link['@_title'];
+        if (!title) continue;
+
+        // Strip " repealed" suffix
+        if (title.endsWith(MetadataParser.REPEALED_SUFFIX)) {
+          title = title.slice(0, -MetadataParser.REPEALED_SUFFIX.length);
+        }
+
+        if (title === 'current') continue;
+
+        labels.add(title);
+      }
+    }
+
+    if (status === 'final') {
+      const firstVersion = getFirstVersion(shortType);
+      if (firstVersion) labels.add(firstVersion);
+    }
+
+    if (prospective) {
+      const valid = this.extractValid(metadata);
+      if (valid) labels.add(valid);
+    }
+
+    return [...labels].sort(compareVersions);
+  }
+
+  /**
+   * Check whether the content is prospective (not yet in force).
+   * For fragment requests, checks the fragment element's Status attribute.
+   * P1 elements inherit Status from their parent P1group, so when the
+   * fragment is a P1 without its own Status, we check the P1group parent.
+   * For whole-document requests, checks the root Legislation element.
+   */
+  private extractProspective(legislation: any, fragmentId: string | undefined): boolean {
+    if (fragmentId) {
+      const elementId = fragmentId.replace(/\//g, '-');
+      const result = this.findElementAndParentById(legislation, elementId);
+      if (!result) return false;
+      if (result.element?.['@_Status'] === 'Prospective') return true;
+      if (result.parentTag === 'P1group' && result.parent?.['@_Status'] === 'Prospective') return true;
+      return false;
+    }
+    return legislation?.['@_Status'] === 'Prospective';
+  }
+
+  /**
+   * Extract the fragment path from dc:identifier (e.g. "section/1" from
+   * "http://www.legislation.gov.uk/ukpga/2026/5/section/1").
+   */
+  private extractFragmentId(legislation: any): string | undefined {
+    const raw = legislation?.Metadata?.identifier;
+    // Per data engineering guidance, the first dc:identifier is the canonical URI to use here.
+    const identifier = Array.isArray(raw) ? raw[0] : raw;
+    if (!identifier || typeof identifier !== 'string') return undefined;
+    return parseLegislationUri(identifier)?.fragment;
+  }
+
+  /**
+   * Recursively search the parsed XML tree for an element with a matching @_id attribute.
+   * Returns the element together with its immediate parent and the parent's tag name,
+   * so callers can check inherited attributes (e.g. P1 inheriting Status from P1group).
+   *
+   * @param nodeTag - the tag name of `node` (the key its own parent used to store it)
+   * @param parentNode - the object containing `node`
+   * @param parentTag - the tag name of `parentNode`
+   */
+  private findElementAndParentById(
+    node: any,
+    id: string,
+    nodeTag?: string,
+    parentNode?: any,
+    parentTag?: string
+  ): { element: any; parent?: any; parentTag?: string } | undefined {
+    if (node == null || typeof node !== 'object') return undefined;
+
+    if (node['@_id'] === id) return { element: node, parent: parentNode, parentTag };
+
+    for (const key of Object.keys(node)) {
+      if (key.startsWith('@_')) continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          const found = this.findElementAndParentById(item, id, key, node, nodeTag);
+          if (found) return found;
+        }
+      } else {
+        const found = this.findElementAndParentById(child, id, key, node, nodeTag);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  /** Extract the dct:valid date from metadata (namespace prefix stripped by parser). */
+  private extractValid(metadata: any): string | undefined {
+    const valid = metadata?.valid;
+    if (typeof valid === 'string') return valid;
+    return undefined;
   }
 
   private isOutstanding(effect: UnappliedEffect, today: string): boolean {

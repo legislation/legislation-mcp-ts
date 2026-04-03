@@ -4,204 +4,238 @@
       "shortCode": "ukpga",
       "longName": "UnitedKingdomPublicGeneralAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "UK Public General Acts - Acts of the UK Parliament"
     },
     {
       "shortCode": "ukla",
       "longName": "UnitedKingdomLocalAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "UK Local Acts - Acts applying to specific localities"
     },
     {
       "shortCode": "ukppa",
       "longName": "UnitedKingdomPrivateOrPersonalAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "UK Private or Personal Acts"
     },
     {
       "shortCode": "asp",
       "longName": "ScottishAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Acts of the Scottish Parliament"
     },
     {
       "shortCode": "nia",
       "longName": "NorthernIrelandAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Northern Ireland Assembly Acts"
     },
     {
       "shortCode": "aosp",
       "longName": "ScottishOldAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Old Scottish Acts (pre-1707)"
     },
     {
       "shortCode": "aep",
       "longName": "EnglandAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Old English Acts (pre-1707)"
     },
     {
       "shortCode": "aip",
       "longName": "IrelandAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Old Irish Acts (pre-1800)"
     },
     {
       "shortCode": "apgb",
       "longName": "GreatBritainAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Acts of Great Britain (1707-1800)"
     },
     {
       "shortCode": "gbla",
       "longName": "GreatBritainLocalAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Great Britain Local Acts (1707-1800)"
     },
     {
       "shortCode": "gbppa",
       "longName": "GreatBritainPrivateOrPersonalAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Great Britain Private or Personal Acts (1707-1800)"
     },
     {
       "shortCode": "anaw",
       "longName": "WelshNationalAssemblyAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Acts of the National Assembly for Wales"
     },
     {
       "shortCode": "asc",
       "longName": "WelshParliamentAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Acts of Senedd Cymru (Welsh Parliament)"
     },
     {
       "shortCode": "mwa",
       "longName": "WelshAssemblyMeasure",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Measures of the National Assembly for Wales"
     },
     {
       "shortCode": "ukcm",
       "longName": "UnitedKingdomChurchMeasure",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "UK Church Measures"
     },
     {
       "shortCode": "mnia",
       "longName": "NorthernIrelandAssemblyMeasure",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Northern Ireland Assembly Measures"
     },
     {
       "shortCode": "apni",
       "longName": "NorthernIrelandParliamentAct",
       "category": "primary",
+      "firstVersion": "enacted",
       "description": "Acts of the old Northern Ireland Parliament (1921-1972)"
     },
     {
       "shortCode": "uksi",
       "longName": "UnitedKingdomStatutoryInstrument",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "UK Statutory Instruments - delegated legislation"
     },
     {
       "shortCode": "ukmd",
       "longName": "UnitedKingdomMinisterialDirection",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "UK Ministerial Directions"
     },
     {
       "shortCode": "ukmo",
       "longName": "UnitedKingdomMinisterialOrder",
       "category": "secondary",
+      "firstVersion": "created",
       "description": "UK Ministerial Orders"
     },
     {
       "shortCode": "uksro",
       "longName": "UnitedKingdomStatutoryRuleOrOrder",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "UK Statutory Rules and Orders (pre-1948)"
     },
     {
       "shortCode": "wsi",
       "longName": "WelshStatutoryInstrument",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Welsh Statutory Instruments"
     },
     {
       "shortCode": "ssi",
       "longName": "ScottishStatutoryInstrument",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Scottish Statutory Instruments"
     },
     {
       "shortCode": "nisi",
       "longName": "NorthernIrelandOrderInCouncil",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Northern Ireland Orders in Council"
     },
     {
       "shortCode": "nisr",
       "longName": "NorthernIrelandStatutoryRule",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Northern Ireland Statutory Rules"
     },
     {
       "shortCode": "ukci",
       "longName": "UnitedKingdomChurchInstrument",
       "category": "secondary",
+      "firstVersion": "created",
       "description": "UK Church Instruments"
     },
     {
       "shortCode": "nisro",
       "longName": "NorthernIrelandStatutoryRuleOrOrder",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Northern Ireland Statutory Rules and Orders (pre-1974)"
     },
     {
       "shortCode": "ukdsi",
       "longName": "UnitedKingdomDraftStatutoryInstrument",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "UK Draft Statutory Instruments (not yet in force)"
     },
     {
       "shortCode": "sdsi",
       "longName": "ScottishDraftStatutoryInstrument",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Scottish Draft Statutory Instruments (not yet in force)"
     },
     {
       "shortCode": "nidsr",
       "longName": "NorthernIrelandDraftStatutoryRule",
       "category": "secondary",
+      "firstVersion": "made",
       "description": "Northern Ireland Draft Statutory Rules (not yet in force)"
     },
     {
       "shortCode": "eur",
       "longName": "EuropeanUnionRegulation",
       "category": "euretained",
+      "firstVersion": "adopted",
       "description": "EU Regulations retained in UK law"
     },
     {
       "shortCode": "eudn",
       "longName": "EuropeanUnionDecision",
       "category": "euretained",
+      "firstVersion": "adopted",
       "description": "EU Decisions retained in UK law"
     },
     {
       "shortCode": "eudr",
       "longName": "EuropeanUnionDirective",
       "category": "euretained",
+      "firstVersion": "adopted",
       "description": "EU Directives retained in UK law"
     },
     {
       "shortCode": "eut",
       "longName": "EuropeanUnionTreaty",
       "category": "euretained",
+      "firstVersion": "adopted",
       "description": "EU Treaties"
     }
   ],

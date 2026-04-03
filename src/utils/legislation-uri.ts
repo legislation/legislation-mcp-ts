@@ -19,6 +19,8 @@
  *   4. Whatever remains is the fragment
  */
 
+import { FIRST_VERSION_KEYWORDS } from './version-sort.js';
+
 export interface ParsedLegislationUri {
   type: string;
   year: string;
@@ -28,7 +30,7 @@ export interface ParsedLegislationUri {
   language?: string;
 }
 
-const FIRST_VERSION_KEYWORDS = ["enacted", "made", "created", "adopted"];
+const OTHER_VERSION_KEYWORDS = ["prospective", "current"];
 const LANGUAGES = ["english", "welsh"];
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CALENDAR_YEAR_RE = /^\d{4}$/;
@@ -90,7 +92,7 @@ export function parseLegislationUri(uri: string): ParsedLegislationUri | null {
   let version: string | undefined;
   if (remaining.length > 0) {
     const last = remaining[remaining.length - 1];
-    if (ISO_DATE_RE.test(last) || FIRST_VERSION_KEYWORDS.includes(last)) {
+    if (ISO_DATE_RE.test(last) || FIRST_VERSION_KEYWORDS.has(last) || OTHER_VERSION_KEYWORDS.includes(last)) {
       version = remaining.pop()!;
     }
   }

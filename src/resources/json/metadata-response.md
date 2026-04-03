@@ -69,6 +69,22 @@ These fields reflect the version and language of the response, when the request 
   - Values: `"english"`, `"welsh"`
   - Present when a specific language was requested
 
+### Prospective Status
+
+- **prospective** (boolean, optional) - Whether the content is prospective (not yet in force)
+  - `true` when the document or fragment has `Status="Prospective"`
+  - For fragment requests, reflects the fragment's status, not the document's
+  - Absent when the content is in force
+
+### Available Versions
+
+- **versions** (array of strings, optional) - Available milestone version labels
+  - Values are usable as the `version` parameter in subsequent requests
+  - Sorted: first-version keyword (`enacted`/`made`/`created`/`adopted`), then dates chronologically
+  - Example: `["enacted", "2020-01-30", "2022-06-01", "2024-01-01"]`
+  - For fragment requests, scoped to the fragment — lists only versions where that provision changed
+  - Only present for unversioned requests (like `upToDate` and `unappliedEffects`)
+
 ### Up-to-Date Status
 
 - **upToDate** (boolean, optional) - Whether the legislation text is current
@@ -115,6 +131,7 @@ These fields reflect the version and language of the response, when the request 
   "status": "revised",
   "extent": ["E", "W", "S", "NI"],
   "enactmentDate": "2020-01-30",
+  "versions": ["enacted", "2020-01-30", "2022-06-01", "2024-01-01"],
   "upToDate": true
 }
 ```

@@ -72,9 +72,18 @@ export async function execute(
     }
 
     // If JSON format requested, parse the XML to structured JSON
-    const content = format === "json"
-      ? JSON.stringify(new TocParser().parse(result.content), null, 2)
-      : result.content;
+    let content: string;
+    if (format === "json") {
+      const toc = new TocParser().parse(result.content);
+      if (version) {
+        toc.meta.versions = undefined;
+        toc.meta.unappliedEffects = undefined;
+        toc.meta.upToDate = undefined;
+      }
+      content = JSON.stringify(toc, null, 2);
+    } else {
+      content = result.content;
+    }
 
     return {
       content: [

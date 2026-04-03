@@ -246,6 +246,267 @@ test('MetadataParser parses SectionRange provision refs', () => {
   assert.strictEqual(effect.source.refs, undefined, 'No refs when AffectingProvisions element is absent');
 });
 
+// --- Versions extraction tests ---
+
+const REVISED_WITH_VERSIONS_XML = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2"
+    RestrictExtent="E+W+S+N.I.">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:title>Test Act 2020</dc:title>
+        <dct:valid>2024-01-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2020-01-30" title="2020-01-30"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2022-06-01" title="2022-06-01"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+test('MetadataParser extracts sorted versions from hasVersion links', () => {
+  const parser = new MetadataParser();
+  const result = parser.parse(REVISED_WITH_VERSIONS_XML);
+
+  assert.deepStrictEqual(result.versions, [
+    'enacted', '2020-01-30', '2022-06-01'
+  ], 'Should include hasVersion titles with "current" stripped, sorted');
+});
+
+test('MetadataParser ensures first-version keyword for final documents', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2" title="current"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2024-01-01" title="2024-01-01"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="final"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['enacted', '2024-01-01'],
+    'Should add "enacted" for final ukpga');
+});
+
+test('MetadataParser adds "made" for final secondary legislation', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/uksi/2020/100">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/uksi/2020/100" title="current"/>
+        <ukm:SecondaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomStatutoryInstrument"/>
+                <ukm:DocumentStatus Value="final"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="100"/>
+        </ukm:SecondaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['made'],
+    'Should add "made" for final uksi');
+});
+
+test('MetadataParser does not synthesize prospective for final document with only "current"', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="final"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['enacted'],
+    'Should only have first-version keyword, no synthesized "prospective"');
+});
+
+test('MetadataParser strips " repealed" suffix from version labels', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2024-01-01" title="2024-01-01 repealed"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.ok(result.versions?.includes('2024-01-01'), 'Should strip " repealed" suffix');
+  assert.ok(!result.versions?.some(v => v.includes('repealed')), 'No version should contain "repealed"');
+});
+
+test('MetadataParser sets prospective from Status attribute', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2026/8"
+    Status="Prospective">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dct:valid>2026-03-05</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2026/8/enacted" title="enacted"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2026"/>
+            <ukm:Number Value="8"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.prospective, true, 'Should be prospective when Status="Prospective"');
+  assert.deepStrictEqual(result.versions, ['enacted', '2026-03-05'],
+    'Should add dct:valid for prospective content');
+});
+
+test('MetadataParser detects prospective from P1group parent Status', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2/section/5</dc:identifier>
+        <dct:valid>2025-03-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+    <Primary>
+        <Body>
+            <P1group Status="Prospective">
+                <P1 id="section-5">
+                    <Pnumber>5</Pnumber>
+                    <P1para><Text>Some prospective text.</Text></P1para>
+                </P1>
+            </P1group>
+        </Body>
+    </Primary>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.prospective, true,
+    'Should detect prospective from P1group parent when P1 has no Status');
+  assert.deepStrictEqual(result.versions, ['enacted', '2025-03-01'],
+    'Should add dct:valid for prospective P1group fragment');
+});
+
+test('MetadataParser handles multiple dc:identifier elements for fragment lookup', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2/section/5</dc:identifier>
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2</dc:identifier>
+        <dct:valid>2025-03-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+    <Primary>
+        <Body>
+            <P1group Status="Prospective">
+                <P1 id="section-5">
+                    <Pnumber>5</Pnumber>
+                    <P1para><Text>Some prospective text.</Text></P1para>
+                </P1>
+            </P1group>
+        </Body>
+    </Primary>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.prospective, true,
+    'Should detect prospective from P1group even with multiple dc:identifier');
+  assert.deepStrictEqual(result.versions, ['enacted', '2025-03-01'],
+    'Should add dct:valid for prospective P1group fragment with multiple dc:identifier');
+});
+
+test('MetadataParser does not set prospective when Status is absent', () => {
+  const parser = new MetadataParser();
+  const result = parser.parse(SAMPLE_METADATA_XML);
+  assert.strictEqual(result.prospective, undefined, 'Should not set prospective when Status is absent');
+});
+
+test('MetadataParser returns empty versions when no hasVersion links exist', () => {
+  const parser = new MetadataParser();
+  const result = parser.parse(SAMPLE_METADATA_XML);
+  assert.deepStrictEqual(result.versions, [], 'Should be empty array when no hasVersion links');
+});
+
 test('MetadataParser skips effects for specific versions', () => {
   const parser = new MetadataParser();
   const xmlWithVersion = XML_WITH_EFFECTS.replace(
@@ -255,6 +516,9 @@ test('MetadataParser skips effects for specific versions', () => {
 
   const result = parser.parse(xmlWithVersion);
   assert.strictEqual(result.version, 'enacted');
-  assert.strictEqual(result.unappliedEffects, undefined, 'Should skip effects for non-latest version');
-  assert.strictEqual(result.upToDate, undefined, 'Should not report upToDate for non-latest version');
+  // Parser always populates all fields; the tool is responsible for suppressing
+  // versions/effects/upToDate for versioned requests
+  assert.ok(Array.isArray(result.versions), 'Parser always populates versions');
+  assert.ok(Array.isArray(result.unappliedEffects), 'Parser always populates unappliedEffects');
+  assert.strictEqual(typeof result.upToDate, 'boolean', 'Parser always populates upToDate');
 });
