@@ -185,10 +185,6 @@ function serializeSchedule(w: Writer, schedule: Schedule): void {
     w.write(`## ${schedule.subtitle}`);
     w.endLine();
   }
-  if (schedule.reference) {
-    w.write(schedule.reference);
-    w.endLine();
-  }
   serializeBody(w, schedule.body);
 }
 

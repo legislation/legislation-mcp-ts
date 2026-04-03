@@ -300,7 +300,7 @@ test('Schedule with title block', () => {
 
   assert.ok(result.includes('## Schedule 1'), 'Should format schedule number');
   assert.ok(result.includes('## Powers of Attorney'), 'Should format schedule title');
-  assert.ok(result.includes('Section 5'), 'Should include reference');
+  assert.ok(!result.includes('Section 5'), 'Should suppress Reference element');
   assert.ok(result.includes('1. Schedule paragraph text.'), 'Should include schedule body content');
 });
 
