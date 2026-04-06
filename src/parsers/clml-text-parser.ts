@@ -5,7 +5,8 @@
  * serialized to plain text by clml-text-serializer.ts.
  */
 
-import { DOMParser } from '@xmldom/xmldom';
+import { DOMParser, type Document as XmlDocument, type Element } from '@xmldom/xmldom';
+
 import { parseLegislationUri } from '../utils/legislation-uri.js';
 import type {
   Document, Division, DivisionName, Provision, SubProvision,
@@ -17,7 +18,7 @@ import type {
 
 export function parse(xml: string): Document {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  const startNode = findFragmentTarget(doc) ?? doc.documentElement;
+  const startNode = findFragmentTarget(doc) ?? doc.documentElement!;
   return parseDocument(startNode);
 }
 
@@ -49,7 +50,7 @@ function parseDocument(root: Element): Document {
   }
 
   // Standalone block element (Tabular, etc.)
-  if (isKnownBlockTag(root.localName)) {
+  if (isKnownBlockTag(root.localName!)) {
     return { type: 'document', prelims: parseBlockElement(root), body: [], schedules: [] };
   }
 
@@ -61,7 +62,7 @@ function parseDocument(root: Element): Document {
 
 function collectDocument(el: Element, doc: Document): void {
   for (const child of childElements(el)) {
-    const name = child.localName;
+    const name = child.localName!;
 
     // Skip metadata and contents
     if (name === 'Metadata' || name === 'Commentaries' || name === 'Commentary'
@@ -132,7 +133,7 @@ const DIVISION_TAGS: Record<string, DivisionName> = {
 };
 
 function parseDivisionOrProvision(el: Element): (Division | Provision)[] | null {
-  const name = el.localName;
+  const name = el.localName!;
 
   if (name in DIVISION_TAGS) {
     return [parseDivision(el, DIVISION_TAGS[name])];
@@ -181,7 +182,7 @@ function collectDivisionChildren(el: Element, out: (Division | Provision)[]): vo
   }
 
   // Known block elements — wrap in a dummy leaf provision
-  if (isKnownBlockTag(el.localName)) {
+  if (isKnownBlockTag(el.localName!)) {
     const blocks = parseBlockElement(el);
     if (blocks.length > 0) {
       out.push({ type: 'provision', number: '', variant: 'leaf', content: blocks } as Provision);
@@ -328,7 +329,7 @@ function parseParagraphAtLevel(el: Element, level: number): Paragraph {
 /** Dispatch: is this element a P2 (SubProvision) or P3+ (Paragraph)? */
 function parseSubOrParagraph(child: Element): SubProvision | Paragraph | null {
   if (child.localName === 'P2') return parseSubProvision(child);
-  const m = child.localName.match(P_LEVEL_RE);
+  const m = child.localName!.match(P_LEVEL_RE);
   if (m) {
     const level = parseInt(m[1], 10);
     if (level >= 3) return parseParagraphAtLevel(child, level);
@@ -337,7 +338,7 @@ function parseSubOrParagraph(child: Element): SubProvision | Paragraph | null {
 }
 
 function parseParagraphElement(child: Element): Paragraph | null {
-  const m = child.localName.match(P_LEVEL_RE);
+  const m = child.localName!.match(P_LEVEL_RE);
   if (m) {
     const level = parseInt(m[1], 10);
     if (level >= 3) return parseParagraphAtLevel(child, level);
@@ -693,7 +694,7 @@ function parseNumberedParagraph(el: Element): NumberedParagraph {
 
 // --- Fragment detection ---
 
-function findFragmentTarget(doc: XMLDocument): Element | null {
+function findFragmentTarget(doc: XmlDocument): Element | null {
   const identifiers = doc.getElementsByTagName('dc:identifier');
   if (identifiers.length === 0) return null;
 
@@ -704,6 +705,7 @@ function findFragmentTarget(doc: XMLDocument): Element | null {
   if (!parsed?.fragment) return null;
 
   const targetId = parsed.fragment.replace(/\//g, '-');
+  if (!doc.documentElement) return null;
   const target = findElementById(doc.documentElement, targetId);
   if (!target) return null;
 
@@ -791,7 +793,7 @@ function* flattenProvisionContent(el: Element, paraTag: string): Iterable<Elemen
 /** Flatten group wrappers (e.g. P2group) so each child provision is yielded individually. */
 function* expandGroups(elements: Iterable<Element>): Iterable<Element> {
   for (const el of elements) {
-    if (el.localName.match(/^P\dgroup$/)) {
+    if (el.localName!.match(/^P\dgroup$/)) {
       yield* childElements(el);
     } else {
       yield el;
