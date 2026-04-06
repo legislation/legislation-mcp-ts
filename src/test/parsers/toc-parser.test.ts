@@ -268,6 +268,22 @@ test('TocParser extracts text from inline elements (Abbreviation, Emphasis)', ()
   assert.strictEqual(result.contents.body[1].title, 'Meaning of "relevant person"');
 });
 
+test('TocParser decodes standard XML entities in contents titles', () => {
+  const xml = makeXml({
+    contentsXml: `
+      <ContentsItem IdURI="http://www.legislation.gov.uk/id/ukpga/2024/1/section/1">
+        <ContentsNumber>1</ContentsNumber>
+        <ContentsTitle>Finance &amp; Administration &lt;General&gt;</ContentsTitle>
+      </ContentsItem>
+    `,
+  });
+
+  const parser = new TocParser();
+  const result = parser.parse(xml);
+
+  assert.strictEqual(result.contents.body[0].title, 'Finance & Administration <General>');
+});
+
 test('TocParser creates synthetic items from navigation links', () => {
   const xml = makeXml({
     atomLinks: `

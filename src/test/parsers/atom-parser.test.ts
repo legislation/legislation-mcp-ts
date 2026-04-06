@@ -129,3 +129,22 @@ test('AtomParser handles missing optional fields', () => {
   assert.strictEqual(result.documents.length, 1);
   assert.strictEqual(result.documents[0].date, undefined, 'Date should be undefined when missing');
 });
+
+test('AtomParser decodes standard XML entities in titles', () => {
+  const parser = new AtomParser();
+  const feedWithEntities = `
+    <feed xmlns="http://www.w3.org/2005/Atom"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+      <entry>
+        <id>http://www.legislation.gov.uk/id/ukpga/2026/3</id>
+        <title>Finance Act 2024 &amp; related provisions &lt;draft&gt;</title>
+        <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+        <ukm:Year Value="2026"/>
+        <ukm:Number Value="3"/>
+      </entry>
+    </feed>
+  `;
+
+  const result = parser.parse(feedWithEntities);
+  assert.strictEqual(result.documents[0].title, 'Finance Act 2024 & related provisions <draft>');
+});

@@ -68,6 +68,17 @@ test('MetadataParser handles missing extent', () => {
   assert.strictEqual(result.extent, undefined, 'Should handle missing extent');
 });
 
+test('MetadataParser decodes standard XML entities in metadata title', () => {
+  const parser = new MetadataParser();
+  const xmlWithEntities = SAMPLE_METADATA_XML.replace(
+    'Direct Payments to Farmers (Legislative Continuity) Act 2020',
+    'Direct Payments &amp; Farmers &lt;Continuity&gt; Act 2020'
+  );
+
+  const result = parser.parse(xmlWithEntities);
+  assert.strictEqual(result.title, 'Direct Payments & Farmers <Continuity> Act 2020');
+});
+
 test('MetadataParser strips id prefix correctly', () => {
   const parser = new MetadataParser();
 
