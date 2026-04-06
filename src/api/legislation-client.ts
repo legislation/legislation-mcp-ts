@@ -16,6 +16,8 @@ export interface DisambiguationAlternative {
   number: string;
 }
 
+export type LegislationLanguage = "english" | "welsh";
+
 export type LegislationResponse =
   | { kind: "document"; content: string }
   | { kind: "disambiguation"; alternatives: DisambiguationAlternative[] };
@@ -34,12 +36,14 @@ export class LegislationClient {
     options: {
       format?: "xml" | "akn" | "html";
       version?: string; // Point-in-time date (YYYY-MM-DD)
+      language?: LegislationLanguage;
     } = {}
   ): Promise<LegislationResponse> {
-    const { format = "xml", version } = options;
+    const { format = "xml", version, language } = options;
 
     const versionPath = version ? `/${version}` : "";
-    const url = `${this.baseUrl}/${type}/${year}/${number}${versionPath}/data.${format}`;
+    const languagePath = language === "welsh" ? "/welsh" : "";
+    const url = `${this.baseUrl}/${type}/${year}/${number}${versionPath}${languagePath}/data.${format}`;
 
     return this.fetchDocument(url);
   }
@@ -59,12 +63,14 @@ export class LegislationClient {
     number: string,
     options: {
       version?: string; // Point-in-time date (YYYY-MM-DD)
+      language?: LegislationLanguage;
     } = {}
   ): Promise<LegislationResponse> {
-    const { version } = options;
+    const { version, language } = options;
 
     const versionPath = version ? `/${version}` : "";
-    const url = `${this.baseUrl}/${type}/${year}/${number}${versionPath}/resources/data.xml`;
+    const languagePath = language === "welsh" ? "/welsh" : "";
+    const url = `${this.baseUrl}/${type}/${year}/${number}${versionPath}/resources${languagePath}/data.xml`;
 
     return this.fetchDocument(url);
   }
@@ -84,12 +90,14 @@ export class LegislationClient {
     options: {
       format?: "xml" | "akn" | "html";
       version?: string; // Point-in-time date (YYYY-MM-DD)
+      language?: LegislationLanguage;
     } = {}
   ): Promise<LegislationResponse> {
-    const { format = "xml", version } = options;
+    const { format = "xml", version, language } = options;
 
     const versionPath = version ? `/${version}` : "";
-    const url = `${this.baseUrl}/${type}/${year}/${number}/${fragmentId}${versionPath}/data.${format}`;
+    const languagePath = language === "welsh" ? "/welsh" : "";
+    const url = `${this.baseUrl}/${type}/${year}/${number}/${fragmentId}${versionPath}${languagePath}/data.${format}`;
 
     return this.fetchDocument(url);
   }
@@ -105,12 +113,14 @@ export class LegislationClient {
     options: {
       format?: "xml" | "akn" | "html";
       version?: string; // Point-in-time date (YYYY-MM-DD)
+      language?: LegislationLanguage;
     } = {}
   ): Promise<LegislationResponse> {
-    const { format = "xml", version } = options;
+    const { format = "xml", version, language } = options;
 
     const versionPath = version ? `/${version}` : "";
-    const url = `${this.baseUrl}/${type}/${year}/${number}/contents${versionPath}/data.${format}`;
+    const languagePath = language === "welsh" ? "/welsh" : "";
+    const url = `${this.baseUrl}/${type}/${year}/${number}/contents${versionPath}${languagePath}/data.${format}`;
 
     return this.fetchDocument(url);
   }

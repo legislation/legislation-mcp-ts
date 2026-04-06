@@ -4,7 +4,7 @@
  * Retrieve a specific piece of UK legislation by citation
  */
 
-import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
+import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
 import { parse } from "../parsers/clml-text-parser.js";
 import { serializeDocument } from "../parsers/clml-text-serializer.js";
 import { getUpToDateCallout } from "./up-to-date-callout.js";
@@ -47,6 +47,11 @@ export const inputSchema = {
       type: "string",
       description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Dates before first version return an error.",
     },
+    language: {
+      type: "string",
+      enum: ["english", "welsh"],
+      description: "Optional: Set to \"welsh\" to retrieve the Welsh-language text for bilingual legislation (e.g. asc, anaw types). Defaults to \"english\". Non-bilingual legislation ignores this parameter.",
+    },
   },
   required: ["type", "year", "number"],
 };
@@ -58,16 +63,18 @@ export async function execute(
     number: string;
     format?: "xml" | "text" | "akn" | "html";
     version?: string;
+    language?: LegislationLanguage;
   },
   client: LegislationClient
 ): Promise<any> {
-  const { type, year, number, format = "text", version } = args;
+  const { type, year, number, format = "text", version, language } = args;
 
   try {
     const apiFormat = format === "text" ? "xml" : format;
     const result = await client.getDocument(type, year, number, {
       format: apiFormat,
       version,
+      language,
     });
 
     if (result.kind === "disambiguation") {

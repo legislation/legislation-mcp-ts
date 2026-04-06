@@ -4,7 +4,7 @@
  * Retrieve the table of contents for a piece of UK legislation
  */
 
-import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
+import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
 import { TocParser } from "../parsers/toc-parser.js";
 
 export const name = "get_legislation_table_of_contents";
@@ -43,6 +43,11 @@ export const inputSchema = {
       type: "string",
       description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date.",
     },
+    language: {
+      type: "string",
+      enum: ["english", "welsh"],
+      description: "Optional: Set to \"welsh\" to retrieve the Welsh-language table of contents for bilingual legislation (e.g. asc, anaw types). Defaults to \"english\". Non-bilingual legislation ignores this parameter.",
+    },
   },
   required: ["type", "year", "number"],
 };
@@ -54,10 +59,11 @@ export async function execute(
     number: string;
     format?: "json" | "xml" | "akn" | "html";
     version?: string;
+    language?: LegislationLanguage;
   },
   client: LegislationClient
 ): Promise<any> {
-  const { type, year, number, format = "json", version } = args;
+  const { type, year, number, format = "json", version, language } = args;
 
   try {
     // For non-JSON formats, fetch directly in that format
@@ -65,6 +71,7 @@ export async function execute(
     const result = await client.getTableOfContents(type, year, number, {
       format: apiFormat,
       version,
+      language,
     });
 
     if (result.kind === "disambiguation") {

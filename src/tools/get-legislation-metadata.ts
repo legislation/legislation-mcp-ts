@@ -4,7 +4,7 @@
  * Retrieve structured metadata for a specific piece of UK legislation
  */
 
-import { LegislationClient, LegislationResponse } from "../api/legislation-client.js";
+import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
 import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect } from "../parsers/metadata-parser.js";
 import { contains } from "../utils/section-range-containment.js";
 import { fetchAllEffects } from "./up-to-date-callout.js";
@@ -49,6 +49,11 @@ export const inputSchema = {
       type: "string",
       description: "Optional: Fragment identifier to scope metadata to a specific provision (e.g. \"section/12\", \"part/2/chapter/1\"). Use get_legislation_table_of_contents to discover valid fragment IDs.",
     },
+    language: {
+      type: "string",
+      enum: ["english", "welsh"],
+      description: "Optional: Set to \"welsh\" to retrieve Welsh-language metadata for bilingual legislation (e.g. asc, anaw types). Returns Welsh title, dc:language \"cy\", and uses WelshApplied status for effects. Defaults to \"english\". Non-bilingual legislation ignores this parameter.",
+    },
   },
   required: ["type", "year", "number"],
 };
@@ -60,10 +65,11 @@ export async function execute(
     number: string;
     version?: string;
     fragment?: string;
+    language?: LegislationLanguage;
   },
   client: LegislationClient
 ) {
-  const { type, year, number, version, fragment } = args;
+  const { type, year, number, version, fragment, language } = args;
 
   // Fetch metadata XML.
   // - Fragment requests use the fragment endpoint (full CLML including metadata).
@@ -71,10 +77,10 @@ export async function execute(
   //   does not support version paths.
   // - Unversioned whole-document requests use the lightweight metadata-only endpoint.
   const result = fragment
-    ? await client.getFragment(type, year, number, fragment, { format: "xml", version })
+    ? await client.getFragment(type, year, number, fragment, { format: "xml", version, language })
     : version
-      ? await client.getDocument(type, year, number, { format: "xml", version })
-      : await client.getDocumentMetadata(type, year, number, {});
+      ? await client.getDocument(type, year, number, { format: "xml", version, language })
+      : await client.getDocumentMetadata(type, year, number, { language });
 
   if (result.kind === "disambiguation") {
     return formatDisambiguation(result);
