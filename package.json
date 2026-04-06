@@ -31,11 +31,11 @@
   "author": "The National Archives",
   "license": "OGL-UK-3.0",
   "dependencies": {
-    "@hono/node-server": "^1.19.9",
+    "@hono/node-server": "^1.19.12",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@xmldom/xmldom": "^0.9.9",
     "fast-xml-parser": "^5.5.10",
-    "hono": "^4.11.7"
+    "hono": "^4.12.11"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",
