@@ -21,11 +21,14 @@ import * as searchLegislation from "./tools/search-legislation.js";
 import * as searchLegislationSemantic from "./tools/search-legislation-semantic.js";
 import * as searchLegislationSectionsSemantic from "./tools/search-legislation-sections-semantic.js";
 import * as searchEffects from "./tools/search-effects.js";
+import * as searchLegislationAdvanced from "./tools/search-legislation-advanced.js";
+import * as countLegislationAdvanced from "./tools/count-legislation-advanced.js";
 import * as getResource from "./tools/get-resource.js";
 
 // Import API clients
 import { LegislationClient } from "./api/legislation-client.js";
 import { LexClient } from "./api/lex-client.js";
+import { ResearchClient } from "./api/research-client.js";
 
 // Import resource loader
 import { ResourceLoader } from "./resources/resource-loader.js";
@@ -33,6 +36,7 @@ import { ResourceLoader } from "./resources/resource-loader.js";
 // Shared instances
 const apiClient = new LegislationClient();
 const lexClient = new LexClient();
+const researchClient = new ResearchClient();
 const resourceLoader = new ResourceLoader();
 
 const toolAnnotations = {
@@ -113,6 +117,18 @@ export function createServer(): Server {
           annotations: toolAnnotations,
         },
         {
+          name: searchLegislationAdvanced.name,
+          description: searchLegislationAdvanced.description,
+          inputSchema: searchLegislationAdvanced.inputSchema,
+          annotations: toolAnnotations,
+        },
+        {
+          name: countLegislationAdvanced.name,
+          description: countLegislationAdvanced.description,
+          inputSchema: countLegislationAdvanced.inputSchema,
+          annotations: toolAnnotations,
+        },
+        {
           name: getResource.name,
           description: getResource.description,
           inputSchema: getResource.inputSchema,
@@ -151,6 +167,18 @@ export function createServer(): Server {
 
         case searchEffects.name:
           return await searchEffects.execute(args as any, apiClient);
+
+        case searchLegislationAdvanced.name:
+          return await searchLegislationAdvanced.execute(
+            args as any,
+            researchClient
+          );
+
+        case countLegislationAdvanced.name:
+          return await countLegislationAdvanced.execute(
+            args as any,
+            researchClient
+          );
 
         case getResource.name:
           return await getResource.execute(args as any, resourceLoader);

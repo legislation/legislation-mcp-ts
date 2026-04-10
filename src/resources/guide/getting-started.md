@@ -11,6 +11,8 @@ This MCP server provides tools and resources for working with UK legislation fro
 | Find by title or keyword | `search_legislation` | Real-time, authoritative, exact matching |
 | Search by concept or meaning | `search_legislation_semantic` | Better at understanding intent |
 | Find specific sections by concept | `search_legislation_sections_semantic` | Returns individual sections ranked by relevance |
+| Search within specific elements (titles, chapters, paragraphs, footnotes, etc.) | `search_legislation_advanced` | Powerful query syntax targeting document structure |
+| Count documents or features (paragraphs, schedules, etc.) with grouping | `count_legislation_advanced` | Aggregate statistics and grouped counts |
 
 **Standard search** is live from legislation.gov.uk. **Semantic search** may lag days/weeks behind live data — verify important results with `search_legislation`.
 
