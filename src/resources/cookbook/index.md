@@ -36,6 +36,24 @@ Determine whether legislation is up to date, and if not, identify which amendmen
 
 ---
 
+### `cookbook://find-recent-si-by-subject`
+**Find the Most Recent SI on a Subject**
+
+Use subject-based filtering combined with sort-by-date to find the latest Statutory Instrument in a given policy area.
+
+**What you'll learn:**
+- Using the `subject` parameter (SI-only)
+- Combining `subject`, `sort`, `extent`, and `exactExtent`
+- Why subject doesn't apply to Acts
+- Confirming an SI is actually in force
+
+**Use cases:**
+- "What's the most recent banking SI?"
+- "Find the latest Welsh-only housing regulation"
+- "Get the newest Scottish SI about education"
+
+---
+
 ### `cookbook://point-in-time-version`
 **Point‑in‑Time Retrieval (Versioning)**
 

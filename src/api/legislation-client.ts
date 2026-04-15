@@ -132,23 +132,45 @@ export class LegislationClient {
   async search(params: {
     title?: string;
     text?: string;
-    type?: string;
+    type?: string[];
     year?: string;
     startYear?: string;
     endYear?: string;
+    subject?: string;
+    department?: string;
+    sort?: string;
+    extent?: string;
+    lang?: string;
     page?: number;
   }): Promise<string> {
-    const queryParams = new URLSearchParams();
+    // `subject`, when set, goes in the URL path — the public API's URL-rewrite
+    // layer strips `?subject=` before it reaches MarkLogic. The SI-family type
+    // constraint is enforced by the tool layer; here we just default to
+    // `secondary` (the SI aggregate) if a subject was passed without a type.
+    const types = params.subject && (!params.type || params.type.length === 0)
+      ? ["secondary"]
+      : params.type;
+    const joinedType = types && types.length > 0 ? types.join("+") : undefined;
 
+    const queryParams = new URLSearchParams();
     if (params.title) queryParams.append("title", params.title);
     if (params.text) queryParams.append("text", params.text);
-    if (params.type) queryParams.append("type", params.type);
+    if (joinedType && !params.subject) queryParams.append("type", joinedType);
     if (params.year) queryParams.append("year", params.year);
     if (params.startYear) queryParams.append("start-year", params.startYear);
     if (params.endYear) queryParams.append("end-year", params.endYear);
+    if (params.department) queryParams.append("department", params.department);
+    if (params.sort) queryParams.append("sort", params.sort);
+    if (params.extent) queryParams.append("extent", params.extent);
+    if (params.lang) queryParams.append("lang", params.lang);
     if (params.page && params.page > 1) queryParams.append("page", String(params.page));
 
-    const url = `${this.baseUrl}/search/data.feed?${queryParams.toString()}`;
+    const path =
+      params.subject && joinedType
+        ? `/${encodeURIComponent(joinedType)}/${encodeURIComponent(params.subject)}/data.feed`
+        : `/search/data.feed`;
+    const queryString = queryParams.toString();
+    const url = `${this.baseUrl}${path}${queryString ? `?${queryString}` : ""}`;
 
     return this.fetchText(url);
   }

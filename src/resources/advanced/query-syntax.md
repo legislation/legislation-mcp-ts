@@ -154,10 +154,9 @@ type=primary                   → all primary legislation
 - `secondary` — all secondary legislation
 - `uk` — all UK legislation (primary + secondary)
 - `eu` — all EU legislation
-- `draft` — all drafts
 - `all` — everything except drafts (default)
 
-Drafts are excluded by default. To search everything: `type=all OR type=draft`.
+Drafts are excluded by default.
 
 ## Document Versions and Languages
 

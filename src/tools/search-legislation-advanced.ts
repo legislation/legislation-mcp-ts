@@ -23,6 +23,8 @@ Example: \`title(pension) && type=ukpga && year>=2020\`
 
 Query syntax reference: \`advanced://query-syntax\`
 
+For simple metadata-based filtering (by \`type\`, \`year\`, \`subject\`, \`extent\`, etc.) without full-text snippets or element-scoped matching, \`search_legislation\` is lighter-weight.
+
 See also: \`json://advanced-search-response\`, \`types://guide\``;
 
 export const inputSchema = {
