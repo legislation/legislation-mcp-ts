@@ -38,7 +38,9 @@ export interface LegislationMetadata {
   // Whether the content is prospective (not yet in force)
   prospective?: boolean;
 
-  // Available versions (values usable as the version parameter)
+  // Available milestone version labels.
+  // Most labels are usable as the version parameter; "prospective" is a
+  // label-only entry fetched via the versionless URL.
   // Only present for unversioned requests — like upToDate and unappliedEffects
   versions?: string[];
 
@@ -128,6 +130,7 @@ export class MetadataParser {
 
     const longType = this.extractLongType(legislation);
     const shortType = longToShortTypeMap.get(longType) || '';
+    const metadata = legislation?.Metadata;
 
     const parsed = this.parseDocumentUri(legislation);
     const status = this.extractStatus(legislation);
@@ -137,8 +140,9 @@ export class MetadataParser {
 
     const fragmentId = this.extractFragmentId(legislation);
     const prospective = this.extractProspective(legislation, fragmentId);
+    const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
 
-    const versions = this.extractVersions(legislation, shortType, status, prospective);
+    const versions = this.extractVersions(legislation, shortType, status, prospective, responseLanguage);
 
     return {
       id: parsed.id,
@@ -233,6 +237,19 @@ export class MetadataParser {
     return typeMetadata?.DocumentClassification?.DocumentStatus?.['@_Value'];
   }
 
+  private extractResponseLanguage(metadata: any, parsedLanguage: string | undefined): 'en' | 'cy' | undefined {
+    if (parsedLanguage === 'english') return 'en';
+    if (parsedLanguage === 'welsh') return 'cy';
+
+    const raw = metadata?.language;
+    // We expect at most one dc:language value here in modern legislation XML.
+    const language = Array.isArray(raw) ? raw[0] : raw;
+    if (language === 'en' || language === 'english') return 'en';
+    if (language === 'cy' || language === 'welsh') return 'cy';
+
+    return undefined;
+  }
+
   private static readonly HAS_VERSION_REL = 'http://purl.org/dc/terms/hasVersion';
   private static readonly REPEALED_SUFFIX = ' repealed';
 
@@ -242,11 +259,14 @@ export class MetadataParser {
    * Normalisation steps:
    *  1. Collect title attributes from hasVersion links.
    *  2. Strip trailing " repealed" suffixes (e.g. "2020-01-01 repealed" → "2020-01-01").
-   *  3. Remove "current" (an alias, not a real version label).
+   *  3. Remove "current" (an alias, not a real version label), but remember
+   *     whether it was the only retained hasVersion label.
    *  4. For final-status documents, ensure the first-version keyword is present.
-   *  5. If prospective and dct:valid is present, add the dct:valid date.
-   *  6. Sort: first-version keywords first, then dates chronologically, then any
-   *     remaining labels (e.g. "prospective" if it appeared in the raw links).
+   *  5. For final-status documents where the only retained raw label was
+   *     "current", also add "prospective".
+   *  6. If prospective and dct:valid is present, add the dct:valid date.
+   *  7. Sort: first-version keywords first, then dates chronologically, then any
+   *     remaining labels (e.g. "prospective").
    *
    * Only called for unversioned requests (versions is undefined for versioned requests).
    */
@@ -254,16 +274,21 @@ export class MetadataParser {
     legislation: any,
     shortType: string,
     status: string | undefined,
-    prospective: boolean
+    prospective: boolean,
+    responseLanguage: 'en' | 'cy' | undefined
   ): string[] {
     const metadata = legislation?.Metadata;
     const labels = new Set<string>();
+    let sawCurrent = false;
+    let sawNonCurrent = false;
 
     const links = metadata?.link;
     if (links) {
       const linkList = Array.isArray(links) ? links : [links];
       for (const link of linkList) {
         if (link['@_rel'] !== MetadataParser.HAS_VERSION_REL) continue;
+        const hrefLang = link['@_hreflang'];
+        if (responseLanguage && hrefLang && hrefLang !== responseLanguage) continue;
         let title: string = link['@_title'];
         if (!title) continue;
 
@@ -272,8 +297,12 @@ export class MetadataParser {
           title = title.slice(0, -MetadataParser.REPEALED_SUFFIX.length);
         }
 
-        if (title === 'current') continue;
+        if (title === 'current') {
+          sawCurrent = true;
+          continue;
+        }
 
+        sawNonCurrent = true;
         labels.add(title);
       }
     }
@@ -281,6 +310,7 @@ export class MetadataParser {
     if (status === 'final') {
       const firstVersion = getFirstVersion(shortType);
       if (firstVersion) labels.add(firstVersion);
+      if (sawCurrent && !sawNonCurrent) labels.add('prospective');
     }
 
     if (prospective) {

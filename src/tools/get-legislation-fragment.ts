@@ -17,7 +17,7 @@ Text is best for reading and summarisation. It discards semantic markup, amendme
 
 \`type\`, \`year\`, and \`number\` must be exact — use search_legislation to confirm if unsure. Use get_legislation_table_of_contents to discover fragment IDs. Common fragmentId patterns: \`section/1\`, \`part/2\`, \`part/1/chapter/3\`, \`regulation/5\`, \`crossheading/name\`. The API does not support fragment IDs deeper than the section or regulation level (e.g. \`section/1/a\` is not a valid ID).
 
-Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version.
+Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. Do not pass \`version="prospective"\`; when metadata lists \`"prospective"\`, that is the latest fragment version and should be fetched by omitting the \`version\` parameter.
 
 See: \`types://guide\`, \`cookbook://point-in-time-version\``;
 
@@ -47,7 +47,7 @@ export const inputSchema = {
     },
     version: {
       type: "string",
-      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Dates before first version return an error.",
+      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch current prospective content. Dates before first version return an error.",
     },
     language: {
       type: "string",

@@ -319,7 +319,7 @@ test('MetadataParser ensures first-version keyword for final documents', () => {
     'Should add "enacted" for final ukpga');
 });
 
-test('MetadataParser adds "made" for final secondary legislation', () => {
+test('MetadataParser synthesizes "prospective" for final secondary legislation with only "current"', () => {
   const parser = new MetadataParser();
   const xml = `
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
@@ -340,11 +340,11 @@ test('MetadataParser adds "made" for final secondary legislation', () => {
 `;
 
   const result = parser.parse(xml);
-  assert.deepStrictEqual(result.versions, ['made'],
-    'Should add "made" for final uksi');
+  assert.deepStrictEqual(result.versions, ['made', 'prospective'],
+    'Should add "made" and synthesized "prospective" for final uksi with only "current"');
 });
 
-test('MetadataParser does not synthesize prospective for final document with only "current"', () => {
+test('MetadataParser synthesizes "prospective" for final document with only "current"', () => {
   const parser = new MetadataParser();
   const xml = `
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
@@ -365,8 +365,8 @@ test('MetadataParser does not synthesize prospective for final document with onl
 `;
 
   const result = parser.parse(xml);
-  assert.deepStrictEqual(result.versions, ['enacted'],
-    'Should only have first-version keyword, no synthesized "prospective"');
+  assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
+    'Should add first-version keyword and synthesized "prospective"');
 });
 
 test('MetadataParser strips " repealed" suffix from version labels', () => {
@@ -510,6 +510,158 @@ test('MetadataParser does not set prospective when Status is absent', () => {
   const parser = new MetadataParser();
   const result = parser.parse(SAMPLE_METADATA_XML);
   assert.strictEqual(result.prospective, undefined, 'Should not set prospective when Status is absent');
+});
+
+test('MetadataParser filters hasVersion links by hreflang for Welsh responses', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/wsi/2020/1609/welsh">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/welsh</dc:identifier>
+        <dc:language>cy</dc:language>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/made/welsh" title="made" hreflang="cy"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-02-27/welsh" title="2021-02-27" hreflang="cy"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-05-17" title="2021-05-17" hreflang="en"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2022-03-28" title="2022-03-28" hreflang="en"/>
+        <ukm:SecondaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="WelshStatutoryInstrument"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="1609"/>
+        </ukm:SecondaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.language, 'welsh');
+  assert.deepStrictEqual(result.versions, ['made', '2021-02-27'],
+    'Should keep only Welsh-language hasVersion links');
+});
+
+test('MetadataParser filters hasVersion links by dc:language for English responses', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/wsi/2020/1609">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1</dc:identifier>
+        <dc:language>en</dc:language>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/made" title="made" hreflang="en"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-05-17" title="2021-05-17" hreflang="en"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-02-27/welsh" title="2021-02-27" hreflang="cy"/>
+        <ukm:SecondaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="WelshStatutoryInstrument"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="1609"/>
+        </ukm:SecondaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.language, undefined);
+  assert.deepStrictEqual(result.versions, ['made', '2021-05-17'],
+    'Should use dc:language as fallback and keep only English-language hasVersion links');
+});
+
+test('MetadataParser keeps untagged hasVersion links alongside matching hreflang links', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2/welsh">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2/welsh</dc:identifier>
+        <dc:language>cy</dc:language>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2024-01-01/welsh" title="2024-01-01" hreflang="cy"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2024-06-01" title="2024-06-01" hreflang="en"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['enacted', '2024-01-01'],
+    'Should keep untagged links and matching-language links, but discard non-matching hreflang links');
+});
+
+test('MetadataParser keeps all hasVersion links when response language cannot be determined', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2</dc:identifier>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/enacted" title="enacted"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2021-02-27/welsh" title="2021-02-27" hreflang="cy"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2021-05-17" title="2021-05-17" hreflang="en"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.language, undefined);
+  assert.deepStrictEqual(result.versions, ['enacted', '2021-02-27', '2021-05-17'],
+    'Should keep all hasVersion links when neither URI nor dc:language determines the response language');
+});
+
+test('MetadataParser filters by language before synthesizing prospective for final current-only responses', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2/welsh">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2020/2/welsh</dc:identifier>
+        <dc:language>cy</dc:language>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/welsh" title="current" hreflang="cy"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/2024-01-01" title="2024-01-01" hreflang="en"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="final"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
+    'Should drop non-matching language links before applying the final current-only prospective rule');
 });
 
 test('MetadataParser returns empty versions when no hasVersion links exist', () => {

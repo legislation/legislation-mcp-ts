@@ -15,7 +15,7 @@ Shows the hierarchical structure (Parts, Chapters, Sections) with headings and f
 
 \`type\`, \`year\`, and \`number\` must be exact. If you're not certain, use search_legislation to confirm — identifiers guessed from general knowledge are often wrong.
 
-Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version.
+Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. Do not pass \`version="prospective"\`; when metadata lists \`"prospective"\`, that is the latest version and should be fetched by omitting the \`version\` parameter.
 
 See: \`types://guide\`, \`cookbook://point-in-time-version\`, \`json://table-of-contents-response\``;
 
@@ -41,7 +41,7 @@ export const inputSchema = {
     },
     version: {
       type: "string",
-      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date.",
+      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch current prospective content.",
     },
     language: {
       type: "string",

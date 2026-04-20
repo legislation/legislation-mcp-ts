@@ -19,7 +19,7 @@ For large documents, use get_legislation_table_of_contents first, then get_legis
 
 Common types: \`ukpga\` (Acts), \`uksi\` (SIs), \`asp\` (Scottish Acts), \`asc\` (Welsh Acts), \`nia\` (NI Acts). \`type\`, \`year\`, and \`number\` must be exact — use search_legislation to confirm if unsure.
 
-Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version.
+Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. Do not pass \`version="prospective"\`; when metadata lists \`"prospective"\`, that is the latest version and should be fetched by omitting the \`version\` parameter.
 
 See: \`types://guide\`, \`cookbook://point-in-time-version\`, \`text://format-guide\``;
 
@@ -45,7 +45,7 @@ export const inputSchema = {
     },
     version: {
       type: "string",
-      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Dates before first version return an error.",
+      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch current prospective content. Dates before first version return an error.",
     },
     language: {
       type: "string",

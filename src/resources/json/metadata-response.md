@@ -79,9 +79,13 @@ These fields reflect the version and language of the response, when the request 
 ### Available Versions
 
 - **versions** (array of strings, optional) - Available milestone version labels
-  - Values are usable as the `version` parameter in subsequent requests
-  - Sorted: first-version keyword (`enacted`/`made`/`created`/`adopted`), then dates chronologically
+  - Usually usable as the `version` parameter in subsequent requests
+  - Exception: `"prospective"` is not resolvable as a `version` parameter for `get_legislation` or `get_legislation_fragment`
+  - When `"prospective"` is present, it is the last and most recent version in the list
+  - Fetch that version by omitting the `version` parameter altogether (use the versionless URL)
+  - Sorted: first-version keyword (`enacted`/`made`/`created`/`adopted`), then dates chronologically, then `"prospective"`
   - Example: `["enacted", "2020-01-30", "2022-06-01", "2024-01-01"]`
+  - Example (final/original plus current prospective): `["enacted", "prospective"]`
   - For fragment requests, scoped to the fragment — lists only versions where that provision changed
   - Only present for unversioned requests (like `upToDate` and `unappliedEffects`)
 
