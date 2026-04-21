@@ -5,7 +5,12 @@
 
 const originalFetch = globalThis.fetch;
 
-export function installFetchSpy(responseBody = "<Legislation />") {
+export function installFetchSpy(
+  responseBody = "<Legislation />",
+  options: { contentType?: string; status?: number } = {},
+) {
+  const contentType = options.contentType ?? "application/xml";
+  const status = options.status ?? 200;
   let requestedUrl: string | undefined;
 
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -17,8 +22,8 @@ export function installFetchSpy(responseBody = "<Legislation />") {
           : input.url;
 
     return new Response(responseBody, {
-      status: 200,
-      headers: { "Content-Type": "application/xml" },
+      status,
+      headers: { "Content-Type": contentType },
     });
   }) as typeof fetch;
 

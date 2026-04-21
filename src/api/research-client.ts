@@ -77,6 +77,45 @@ export interface ResearchClientOptions {
   password?: string;
 }
 
+/**
+ * Matching-mode flags that the Research API accepts as URL parameters
+ * (outside the query string itself). Each is optional; when omitted, the
+ * caller's default applies.
+ */
+export interface ResearchMatchingOptions {
+  case?: boolean;
+  stem?: boolean;
+  punctuation?: boolean;
+}
+
+export interface ResearchSearchOptions extends ResearchMatchingOptions {
+  page?: number;
+}
+
+/**
+ * Thrown when the Research API returns HTTP 200 with a non-JSON
+ * content-type (typically an HTML landing page) instead of the expected
+ * JSON envelope. The API signals query-parse failures this way, so a
+ * malformed query is the most common cause — but callers should treat
+ * that as the likely, not certain, explanation.
+ */
+export class ResearchNonJsonResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResearchNonJsonResponseError";
+  }
+}
+
+function addMatchingOptions(
+  params: Record<string, string>,
+  options: ResearchMatchingOptions
+): void {
+  if (options.case !== undefined) params.case = String(options.case);
+  if (options.stem !== undefined) params.stem = String(options.stem);
+  if (options.punctuation !== undefined)
+    params.punctuation = String(options.punctuation);
+}
+
 export class ResearchClient {
   private baseUrl: string;
   private authHeader?: string;
@@ -97,21 +136,30 @@ export class ResearchClient {
     }
   }
 
-  async search(query: string, page?: number): Promise<ResearchSearchResponse> {
+  async search(
+    query: string,
+    options: ResearchSearchOptions = {}
+  ): Promise<ResearchSearchResponse> {
     const params: Record<string, string> = { query };
-    if (page !== undefined) {
-      params.page = String(page);
+    if (options.page !== undefined) {
+      params.page = String(options.page);
     }
+    addMatchingOptions(params, options);
     return this.getJson<ResearchSearchResponse>(
       "/query-builder/search/data.json",
       params
     );
   }
 
-  async count(query: string): Promise<ResearchCountResponse> {
+  async count(
+    query: string,
+    options: ResearchMatchingOptions = {}
+  ): Promise<ResearchCountResponse> {
+    const params: Record<string, string> = { query };
+    addMatchingOptions(params, options);
     return this.getJson<ResearchCountResponse>(
       "/query-builder/count/data.json",
-      { query }
+      params
     );
   }
 
@@ -149,6 +197,19 @@ export class ResearchClient {
       const detail = errorBody ? ` - ${errorBody}` : "";
       throw new Error(
         `Research API request failed: ${response.status} ${response.statusText}${detail}`
+      );
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new ResearchNonJsonResponseError(
+        "Research API returned a non-JSON response. The most likely " +
+          "cause is a query syntax error — common culprits are " +
+          "unbalanced brackets, an unknown element name, an unknown " +
+          "type code, a non-numeric value on a numeric field, or a typo " +
+          "in a reserved word. See advanced://query-syntax for the full " +
+          "grammar. If the query looks well-formed, the API itself may " +
+          "be returning an error page."
       );
     }
 
