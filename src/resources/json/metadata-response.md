@@ -59,11 +59,19 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
 
 ### Version and Language
 
-These fields reflect the version and language of the response, when the request URI included them.
+- **version** (string, optional) - Label identifying the returned representation
+  - Values: a first-version keyword (`"enacted"`, `"made"`, `"created"`, `"adopted"`), an ISO date (`"2024-01-01"`), or `"prospective"` for prospective revised content
+  - Populated on every response the parser can derive it for, not only when the request specified a version
+  - Derivation:
+    - revised prospective content → `"prospective"`
+    - no `dct:valid` → type-specific first-version keyword
+    - otherwise → the latest first-version keyword or ISO-date label in `versions` that is not after `dct:valid`, falling back to `dct:valid` itself if no eligible label exists
 
-- **version** (string, optional) - Version identifier from the request
-  - Example: `"enacted"`, `"made"`, `"2024-01-01"`
-  - Present when a specific version was requested
+- **pointInTime** (string, optional) - Requested point-in-time date
+  - Format: ISO 8601 date (YYYY-MM-DD)
+  - Populated only when the request URL contained a dated version segment AND the response is not final
+  - Absent for `enacted`/`made`/`created`/`adopted` URL segments (use `version` to identify those) and for final-status responses
+  - May differ from `version` on fragment responses: `pointInTime` is what the caller asked for, `version` is the fragment milestone actually selected
 
 - **language** (string, optional) - Language of the response
   - Values: `"english"`, `"welsh"`
@@ -87,7 +95,7 @@ These fields reflect the version and language of the response, when the request 
   - Example: `["enacted", "2020-01-30", "2022-06-01", "2024-01-01"]`
   - Example (final/original plus current prospective): `["enacted", "prospective"]`
   - For fragment requests, scoped to the fragment — lists only versions where that provision changed
-  - Only present for unversioned requests (like `upToDate` and `unappliedEffects`)
+  - Populated on both unversioned and versioned requests
 
 ### Up-to-Date Status
 
@@ -135,6 +143,7 @@ These fields reflect the version and language of the response, when the request 
   "status": "revised",
   "extent": ["E", "W", "S", "NI"],
   "enactmentDate": "2020-01-30",
+  "version": "2024-01-01",
   "versions": ["enacted", "2020-01-30", "2022-06-01", "2024-01-01"],
   "upToDate": true
 }

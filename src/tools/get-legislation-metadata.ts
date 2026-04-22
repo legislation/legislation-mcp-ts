@@ -15,13 +15,13 @@ export const description = `Retrieve structured metadata for a UK legislation do
 
 \`type\`, \`year\`, and \`number\` must be exact — use search_legislation to confirm if unsure.
 
-Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\` (\`draft\`/\`final\`/\`revised\`/\`proposed\`), \`extent\` (e.g. \`["E","W","S","NI"]\`), key dates (\`enactmentDate\`/\`madeDate\`), \`versions\` (available milestone version labels), and \`unappliedEffects\` (amendments enacted but not yet applied to the text).
+Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\` (\`draft\`/\`final\`/\`revised\`/\`proposed\`), \`extent\` (e.g. \`["E","W","S","NI"]\`), key dates (\`enactmentDate\`/\`madeDate\`), \`version\` (label of the returned representation), \`pointInTime\` (requested date, when present), \`versions\` (available milestone version labels), and \`unappliedEffects\` (amendments enacted but not yet applied to the text).
 
 \`unappliedEffects\` and \`upToDate\` are only present for the latest version (no \`version\` parameter). When a specific version is requested, both fields are omitted — effects are not tracked for point-in-time snapshots. For the latest version, \`upToDate\` is \`true\` when all in-force effects have been applied, \`false\` when some are outstanding.
 
 Fragment: pass a \`fragment\` to scope metadata to a specific provision (e.g. \`"section/12"\`, \`"part/2/chapter/1"\`). \`unappliedEffects\` and \`upToDate\` are scoped to the fragment for both revised and enacted/made legislation. Use \`get_legislation_table_of_contents\` to discover valid fragment IDs.
 
-Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. The \`versions\` field may also contain the label \`prospective\`; that label identifies current prospective content but is fetched via the versionless URL rather than as a \`version\` parameter.
+Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. The returned \`version\` field identifies the selected representation (for fragments, this is the fragment milestone, which may be earlier than the requested \`pointInTime\`). The \`versions\` field may also contain the label \`prospective\`; that label identifies current prospective content but is fetched via the versionless URL rather than as a \`version\` parameter.
 
 For response field details, see \`json://metadata-response\`. For legislation type codes, see \`types://guide\`.
 For checking geographical extent, see \`cookbook://check-extent\`. For retrieving historical versions, see \`cookbook://point-in-time-version\`. For determining whether legislation is up to date and which amendments have yet to be applied, see \`cookbook://check-outstanding-effects\`.`;
@@ -91,8 +91,10 @@ export async function execute(
   const metadata = parser.parse(result.content);
 
   if (version) {
-    // Versioned requests: suppress fields that are only meaningful for unversioned requests
-    metadata.versions = undefined;
+    // Effects and upToDate describe outstanding work on the *current* view; they
+    // aren't meaningful for a historical snapshot, so suppress them for versioned
+    // requests. `versions` is retained — it's the full label set for the
+    // document/fragment and useful regardless of which version is selected.
     metadata.unappliedEffects = undefined;
     metadata.upToDate = undefined;
   } else {

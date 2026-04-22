@@ -83,7 +83,6 @@ export async function execute(
     if (format === "json") {
       const toc = new TocParser().parse(result.content);
       if (version) {
-        toc.meta.versions = undefined;
         toc.meta.unappliedEffects = undefined;
         toc.meta.upToDate = undefined;
       }

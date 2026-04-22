@@ -6,7 +6,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { ISO_DATE_RE, parseLegislationUri } from '../utils/legislation-uri.js';
+import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri } from '../utils/legislation-uri.js';
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
 
@@ -31,8 +31,19 @@ export interface LegislationMetadata {
   enactmentDate?: string;   // When enacted (primary legislation)
   madeDate?: string;        // When made (secondary legislation)
 
-  // Version/language of this response (if URI included them)
-  version?: string;        // e.g., "enacted", "2024-01-01"
+  // Selected label identifying the returned representation.
+  // Computed from `versions`, `dct:valid`, and prospective status to mirror
+  // the Java API: the latest first-version keyword or ISO-date label in
+  // `versions` that is not after `dct:valid`, `"prospective"` for revised
+  // prospective content, or the first-version keyword when `dct:valid` is
+  // absent. Falls back to `dct:valid` itself if no eligible label exists.
+  version?: string;        // e.g., "enacted", "2024-01-01", "prospective"
+
+  // ISO date from the request URI, when the caller asked for a dated
+  // point-in-time snapshot. Absent for enacted/made/created/adopted and
+  // for final-status responses (where dated URIs are not meaningful).
+  pointInTime?: string;    // e.g., "2024-01-01"
+
   language?: string;       // "english" or "welsh"
 
   // Whether the content is prospective (not yet in force)
@@ -41,7 +52,6 @@ export interface LegislationMetadata {
   // Available milestone version labels.
   // Most labels are usable as the version parameter; "prospective" is a
   // label-only entry fetched via the versionless URL.
-  // Only present for unversioned requests — like upToDate and unappliedEffects
   versions?: string[];
 
   // Additional metadata
@@ -114,9 +124,10 @@ export class MetadataParser {
 
   /**
    * Parse XML metadata into structured JSON.
-   * Always populates all fields. The caller is responsible for suppressing
-   * fields that are not meaningful for the request context (e.g. versions
-   * and unappliedEffects for versioned requests).
+   * Always populates all derivable fields. The caller is responsible for
+   * suppressing fields that are not meaningful for the request context
+   * (e.g. unappliedEffects and upToDate for versioned requests, where
+   * effects are not tracked for historical snapshots).
    */
   parse(xml: string): LegislationMetadata {
     const obj = this.parser.parse(xml);
@@ -138,7 +149,8 @@ export class MetadataParser {
     const unappliedEffects = this.parseUnappliedEffects(legislation, parsed.language);
     const upToDate = !unappliedEffects.some(e => e.outstanding);
 
-    const fragmentId = this.extractFragmentId(legislation);
+    const dcIdentifier = this.parseDcIdentifier(metadata);
+    const fragmentId = dcIdentifier?.fragment;
     const prospective = this.extractProspective(legislation, fragmentId);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
 
@@ -146,6 +158,18 @@ export class MetadataParser {
       legislation, shortType, status, prospective, responseLanguage,
       fragmentId !== undefined
     );
+
+    const valid = this.extractValid(metadata);
+    const version = MetadataParser.computeVersion(versions, valid, prospective, status, shortType);
+    // dc:identifier carries the fragment-scoped request URI (Legislation@DocumentURI
+    // can be the containing-document URI on fragment responses), so it's the
+    // reliable source for the caller's requested point-in-time.
+    const dcVersion = dcIdentifier?.version;
+    const pointInTime = status !== 'final'
+      && dcVersion !== undefined
+      && ISO_DATE_RE.test(dcVersion)
+      ? dcVersion
+      : undefined;
 
     return {
       id: parsed.id,
@@ -157,7 +181,8 @@ export class MetadataParser {
       extent: this.extractExtent(legislation),
       enactmentDate: this.extractEnactmentDate(legislation),
       madeDate: this.extractMadeDate(legislation),
-      version: parsed.version,
+      version,
+      pointInTime,
       language: parsed.language,
       prospective: prospective || undefined,
       versions,
@@ -166,7 +191,7 @@ export class MetadataParser {
     };
   }
 
-  private parseDocumentUri(legislation: any): { id: string; version?: string; language?: string } {
+  private parseDocumentUri(legislation: any): { id: string; uriVersion?: string; language?: string } {
     const fullUri = legislation['@_DocumentURI'] || '';
     if (!fullUri) return { id: '' };
 
@@ -176,7 +201,7 @@ export class MetadataParser {
       return { id: fullUri.replace(/^https?:\/\/www\.legislation\.gov\.uk\/(id\/)?/, '') };
     }
     const id = `${parsed.type}/${parsed.year}/${parsed.number}`;
-    return { id, version: parsed.version, language: parsed.language };
+    return { id, uriVersion: parsed.version, language: parsed.language };
   }
 
   private extractLongType(legislation: any): string {
@@ -274,8 +299,6 @@ export class MetadataParser {
    *     (A fragment's `dct:valid` may be a containing-document snapshot date rather
    *     than a fragment milestone.)
    *  7. Sort: first-version keywords, then dates chronologically, then "prospective".
-   *
-   * Only called for unversioned requests (versions is undefined for versioned requests).
    */
   private extractVersions(
     legislation: any,
@@ -335,6 +358,41 @@ export class MetadataParser {
   }
 
   /**
+   * Select the label that identifies the returned representation, mirroring the
+   * Java API's `Metadata.computeVersion()`:
+   *
+   *  1. Revised prospective content → `"prospective"`.
+   *  2. `dct:valid` absent → type-specific first-version keyword.
+   *  3. Otherwise scan the sorted `versions` set for eligible labels (the
+   *     first-version keyword, or ISO-date labels not after `dct:valid`) and
+   *     return the latest one.
+   *  4. If none is eligible, fall back to `dct:valid` itself — the response is
+   *     still a revised snapshot valid from that date.
+   */
+  private static computeVersion(
+    versions: string[],
+    valid: string | undefined,
+    prospective: boolean,
+    status: string | undefined,
+    shortType: string
+  ): string | undefined {
+    if (prospective && status === 'revised') return 'prospective';
+    const firstVersion = getFirstVersion(shortType);
+    if (valid === undefined) return firstVersion;
+    let selected: string | undefined = undefined;
+    for (const label of versions) {
+      if (label === firstVersion) {
+        selected = label;
+        continue;
+      }
+      if (ISO_DATE_RE.test(label) && label <= valid) {
+        selected = label;
+      }
+    }
+    return selected ?? valid;
+  }
+
+  /**
    * Non-prospective dct:valid recovery: only treat dct:valid as a version label when
    * "current" was stripped from the scoped links, and either the response is
    * whole-document or the retained fragment set has no other dated labels (in which
@@ -369,15 +427,15 @@ export class MetadataParser {
   }
 
   /**
-   * Extract the fragment path from dc:identifier (e.g. "section/1" from
-   * "http://www.legislation.gov.uk/ukpga/2026/5/section/1").
+   * Parse the first dc:identifier, which is the canonical request URI —
+   * fragment-scoped on fragment responses, where `Legislation@DocumentURI`
+   * may carry the containing-document URI instead.
    */
-  private extractFragmentId(legislation: any): string | undefined {
-    const raw = legislation?.Metadata?.identifier;
-    // Per data engineering guidance, the first dc:identifier is the canonical URI to use here.
+  private parseDcIdentifier(metadata: any): ParsedLegislationUri | undefined {
+    const raw = metadata?.identifier;
     const identifier = Array.isArray(raw) ? raw[0] : raw;
     if (!identifier || typeof identifier !== 'string') return undefined;
-    return parseLegislationUri(identifier)?.fragment;
+    return parseLegislationUri(identifier) ?? undefined;
   }
 
   /**

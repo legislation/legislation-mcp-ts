@@ -737,7 +737,7 @@ test('MetadataParser returns empty versions when no hasVersion links exist', () 
   assert.deepStrictEqual(result.versions, [], 'Should be empty array when no hasVersion links');
 });
 
-test('MetadataParser skips effects for specific versions', () => {
+test('MetadataParser populates all fields for versioned URIs', () => {
   const parser = new MetadataParser();
   const xmlWithVersion = XML_WITH_EFFECTS.replace(
     'DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2"',
@@ -745,10 +745,134 @@ test('MetadataParser skips effects for specific versions', () => {
   );
 
   const result = parser.parse(xmlWithVersion);
+  // The /enacted URL segment isn't an ISO date, so pointInTime is undefined.
+  // version resolves via computeVersion's "no dct:valid → first-version keyword" branch.
   assert.strictEqual(result.version, 'enacted');
-  // Parser always populates all fields; the tool is responsible for suppressing
-  // versions/effects/upToDate for versioned requests
+  assert.strictEqual(result.pointInTime, undefined);
+  // Parser always populates these; the tool is responsible for suppressing
+  // unappliedEffects/upToDate for versioned requests.
   assert.ok(Array.isArray(result.versions), 'Parser always populates versions');
   assert.ok(Array.isArray(result.unappliedEffects), 'Parser always populates unappliedEffects');
   assert.strictEqual(typeof result.upToDate, 'boolean', 'Parser always populates upToDate');
+});
+
+test('MetadataParser.version is "prospective" for revised prospective content', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2026/8"
+    Status="Prospective">
+    <ukm:Metadata xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dct:valid>2026-03-05</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2026/8/enacted" title="enacted"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2026"/>
+            <ukm:Number Value="8"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.version, 'prospective');
+  assert.strictEqual(result.pointInTime, undefined);
+});
+
+test('MetadataParser.version selects latest milestone not after dct:valid on a fragment', () => {
+  const parser = new MetadataParser();
+  // Fragment response whose latest own milestone is 2024-10-01 but whose
+  // representation is served from a later document snapshot (dct:valid = 2024-11-01).
+  // version must identify the fragment milestone, not the snapshot date.
+  //
+  // Root DocumentURI is the containing-document URI (unversioned); the fragment
+  // request URI lives on dc:identifier. pointInTime must come from dc:identifier
+  // or it'd be lost whenever the server populates DocumentURI this way.
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2024/1">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/2/2024-11-01</dc:identifier>
+        <dct:valid>2024-11-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2/2024-10-01" title="2024-10-01"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2024"/>
+            <ukm:Number Value="1"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.version, '2024-10-01');
+  assert.strictEqual(result.pointInTime, '2024-11-01');
+  assert.deepStrictEqual(result.versions, ['2024-10-01']);
+});
+
+test('MetadataParser.version falls back to dct:valid when no milestone is eligible', () => {
+  const parser = new MetadataParser();
+  // Revised whole-document response whose only hasVersion is a raw "prospective"
+  // link and whose target is not itself prospective. extractVersions keeps the
+  // raw label and nothing else (no "current" to trigger dct:valid recovery), so
+  // computeVersion finds no first-version keyword and no eligible ISO-date label
+  // and must fall back to dct:valid itself.
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2">
+    <ukm:Metadata xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dct:valid>2024-01-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2020/2/prospective" title="prospective"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.deepStrictEqual(result.versions, ['prospective']);
+  assert.strictEqual(result.version, '2024-01-01');
+});
+
+test('MetadataParser.pointInTime is undefined for final-status responses', () => {
+  const parser = new MetadataParser();
+  // Even if a dated URI is supplied, final XML has no point-in-time semantics.
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2/2024-01-01">
+    <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="final"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2020"/>
+            <ukm:Number Value="2"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  assert.strictEqual(result.pointInTime, undefined);
+  assert.strictEqual(result.version, 'enacted');
 });
