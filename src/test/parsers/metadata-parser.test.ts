@@ -288,9 +288,11 @@ test('MetadataParser extracts sorted versions from hasVersion links', () => {
   const parser = new MetadataParser();
   const result = parser.parse(REVISED_WITH_VERSIONS_XML);
 
+  // Whole-document revised with "current" stripped: recover dct:valid so the
+  // identity of the returned snapshot isn't lost alongside "current".
   assert.deepStrictEqual(result.versions, [
-    'enacted', '2020-01-30', '2022-06-01'
-  ], 'Should include hasVersion titles with "current" stripped, sorted');
+    'enacted', '2020-01-30', '2022-06-01', '2024-01-01'
+  ], 'Should include hasVersion titles with "current" stripped, sorted, and recover dct:valid');
 });
 
 test('MetadataParser ensures first-version keyword for final documents', () => {
@@ -421,8 +423,8 @@ test('MetadataParser sets prospective from Status attribute', () => {
 
   const result = parser.parse(xml);
   assert.strictEqual(result.prospective, true, 'Should be prospective when Status="Prospective"');
-  assert.deepStrictEqual(result.versions, ['enacted', '2026-03-05'],
-    'Should add dct:valid for prospective content');
+  assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
+    'Revised prospective content gets label-only "prospective", not dct:valid');
 });
 
 test('MetadataParser detects prospective from P1group parent Status', () => {
@@ -461,8 +463,8 @@ test('MetadataParser detects prospective from P1group parent Status', () => {
   const result = parser.parse(xml);
   assert.strictEqual(result.prospective, true,
     'Should detect prospective from P1group parent when P1 has no Status');
-  assert.deepStrictEqual(result.versions, ['enacted', '2025-03-01'],
-    'Should add dct:valid for prospective P1group fragment');
+  assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
+    'Revised prospective fragment via P1group gets label-only "prospective", not dct:valid');
 });
 
 test('MetadataParser handles multiple dc:identifier elements for fragment lookup', () => {
@@ -502,8 +504,8 @@ test('MetadataParser handles multiple dc:identifier elements for fragment lookup
   const result = parser.parse(xml);
   assert.strictEqual(result.prospective, true,
     'Should detect prospective from P1group even with multiple dc:identifier');
-  assert.deepStrictEqual(result.versions, ['enacted', '2025-03-01'],
-    'Should add dct:valid for prospective P1group fragment with multiple dc:identifier');
+  assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
+    'Revised prospective fragment (with multiple dc:identifier) gets label-only "prospective"');
 });
 
 test('MetadataParser does not set prospective when Status is absent', () => {
@@ -514,14 +516,19 @@ test('MetadataParser does not set prospective when Status is absent', () => {
 
 test('MetadataParser filters hasVersion links by hreflang for Welsh responses', () => {
   const parser = new MetadataParser();
+  // Mirrors the observed wsi/2020/1609/part/3/chapter/1/welsh shape: the Welsh
+  // fragment milestones stop at 2021-02-27, but the same XML also carries later
+  // English-only links and a later dct:valid of 2021-04-26. We must not inject
+  // dct:valid or the English dates into the Welsh fragment version set.
   const xml = `
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
     DocumentURI="http://www.legislation.gov.uk/wsi/2020/1609/welsh">
-    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
         xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
         xmlns:atom="http://www.w3.org/2005/Atom">
         <dc:identifier>http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/welsh</dc:identifier>
         <dc:language>cy</dc:language>
+        <dct:valid>2021-04-26</dct:valid>
         <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/made/welsh" title="made" hreflang="cy"/>
         <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-02-27/welsh" title="2021-02-27" hreflang="cy"/>
         <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/wsi/2020/1609/part/3/chapter/1/2021-05-17" title="2021-05-17" hreflang="en"/>
@@ -541,7 +548,7 @@ test('MetadataParser filters hasVersion links by hreflang for Welsh responses', 
   const result = parser.parse(xml);
   assert.strictEqual(result.language, 'welsh');
   assert.deepStrictEqual(result.versions, ['made', '2021-02-27'],
-    'Should keep only Welsh-language hasVersion links');
+    'Should keep only Welsh-language hasVersion links and not inject dct:valid');
 });
 
 test('MetadataParser filters hasVersion links by dc:language for English responses', () => {
@@ -662,6 +669,66 @@ test('MetadataParser filters by language before synthesizing prospective for fin
   const result = parser.parse(xml);
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
     'Should drop non-matching language links before applying the final current-only prospective rule');
+});
+
+test('MetadataParser does not recover dct:valid on a fragment that already has a dated milestone', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2024/1">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/2</dc:identifier>
+        <dct:valid>2024-11-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2/2024-10-01" title="2024-10-01"/>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2024"/>
+            <ukm:Number Value="1"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  // dct:valid may be a containing-document snapshot date, not a fragment milestone.
+  assert.deepStrictEqual(result.versions, ['2024-10-01'],
+    'Fragment response with dated milestone keeps only that milestone, ignoring later dct:valid');
+});
+
+test('MetadataParser recovers dct:valid on a fragment when only "current" was retained', () => {
+  const parser = new MetadataParser();
+  const xml = `
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    DocumentURI="http://www.legislation.gov.uk/ukpga/2024/1">
+    <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
+        xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+        xmlns:atom="http://www.w3.org/2005/Atom">
+        <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/section/2</dc:identifier>
+        <dct:valid>2024-11-01</dct:valid>
+        <atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2" title="current"/>
+        <ukm:PrimaryMetadata>
+            <ukm:DocumentClassification>
+                <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
+                <ukm:DocumentStatus Value="revised"/>
+            </ukm:DocumentClassification>
+            <ukm:Year Value="2024"/>
+            <ukm:Number Value="1"/>
+        </ukm:PrimaryMetadata>
+    </ukm:Metadata>
+</Legislation>
+`;
+
+  const result = parser.parse(xml);
+  // No dated fragment milestone remains after stripping "current", so dct:valid
+  // is the only value that identifies the returned representation.
+  assert.deepStrictEqual(result.versions, ['2024-11-01'],
+    'Fragment response with only "current" stripped recovers dct:valid');
 });
 
 test('MetadataParser returns empty versions when no hasVersion links exist', () => {

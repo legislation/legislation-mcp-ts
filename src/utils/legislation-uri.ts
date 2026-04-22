@@ -32,7 +32,7 @@ export interface ParsedLegislationUri {
 
 const OTHER_VERSION_KEYWORDS = ["prospective", "current"];
 const LANGUAGES = ["english", "welsh"];
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CALENDAR_YEAR_RE = /^\d{4}$/;
 
 const NUMBER_RE = /^\d+$/;

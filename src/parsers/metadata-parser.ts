@@ -6,7 +6,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { parseLegislationUri } from '../utils/legislation-uri.js';
+import { ISO_DATE_RE, parseLegislationUri } from '../utils/legislation-uri.js';
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
 
@@ -142,7 +142,10 @@ export class MetadataParser {
     const prospective = this.extractProspective(legislation, fragmentId);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
 
-    const versions = this.extractVersions(legislation, shortType, status, prospective, responseLanguage);
+    const versions = this.extractVersions(
+      legislation, shortType, status, prospective, responseLanguage,
+      fragmentId !== undefined
+    );
 
     return {
       id: parsed.id,
@@ -254,19 +257,23 @@ export class MetadataParser {
   private static readonly REPEALED_SUFFIX = ' repealed';
 
   /**
-   * Build a sorted list of available version labels from atom:link[@rel='dct:hasVersion'].
+   * Build a sorted list of available version labels in the scope of the response
+   * (whole-document or fragment), mirroring the Java API's `Metadata.versions()`.
    *
-   * Normalisation steps:
-   *  1. Collect title attributes from hasVersion links.
+   *  1. Collect `@title` values from `hasVersion` links whose `@hreflang` matches
+   *     the response language, plus any untagged links.
    *  2. Strip trailing " repealed" suffixes (e.g. "2020-01-01 repealed" → "2020-01-01").
-   *  3. Remove "current" (an alias, not a real version label), but remember
-   *     whether it was the only retained hasVersion label.
-   *  4. For final-status documents, ensure the first-version keyword is present.
-   *  5. For final-status documents where the only retained raw label was
-   *     "current", also add "prospective".
-   *  6. If prospective and dct:valid is present, add the dct:valid date.
-   *  7. Sort: first-version keywords first, then dates chronologically, then any
-   *     remaining labels (e.g. "prospective").
+   *  3. Remove the "current" alias, remembering whether it was present and whether
+   *     it was the only retained label.
+   *  4. For final-status documents, ensure the first-version keyword is present;
+   *     if "current" was the only retained label, also add label-only "prospective".
+   *  5. For revised prospective content, add label-only "prospective".
+   *  6. Otherwise, for non-final content with `dct:valid`, recover it as a version
+   *     label only when "current" was present AND either the response is
+   *     whole-document or the retained fragment set has no other dated labels.
+   *     (A fragment's `dct:valid` may be a containing-document snapshot date rather
+   *     than a fragment milestone.)
+   *  7. Sort: first-version keywords, then dates chronologically, then "prospective".
    *
    * Only called for unversioned requests (versions is undefined for versioned requests).
    */
@@ -275,12 +282,12 @@ export class MetadataParser {
     shortType: string,
     status: string | undefined,
     prospective: boolean,
-    responseLanguage: 'en' | 'cy' | undefined
+    responseLanguage: 'en' | 'cy' | undefined,
+    isFragment: boolean
   ): string[] {
     const metadata = legislation?.Metadata;
     const labels = new Set<string>();
     let sawCurrent = false;
-    let sawNonCurrent = false;
 
     const links = metadata?.link;
     if (links) {
@@ -292,7 +299,6 @@ export class MetadataParser {
         let title: string = link['@_title'];
         if (!title) continue;
 
-        // Strip " repealed" suffix
         if (title.endsWith(MetadataParser.REPEALED_SUFFIX)) {
           title = title.slice(0, -MetadataParser.REPEALED_SUFFIX.length);
         }
@@ -302,23 +308,45 @@ export class MetadataParser {
           continue;
         }
 
-        sawNonCurrent = true;
         labels.add(title);
       }
     }
 
-    if (status === 'final') {
+    const isFinal = status === 'final';
+    const isRevised = status === 'revised';
+    const onlyCurrent = sawCurrent && labels.size === 0;
+
+    if (isFinal) {
       const firstVersion = getFirstVersion(shortType);
       if (firstVersion) labels.add(firstVersion);
-      if (sawCurrent && !sawNonCurrent) labels.add('prospective');
+      if (onlyCurrent) labels.add('prospective');
     }
 
-    if (prospective) {
+    if (prospective && isRevised) {
+      labels.add('prospective');
+    } else if (!isFinal) {
       const valid = this.extractValid(metadata);
-      if (valid) labels.add(valid);
+      if (valid && MetadataParser.shouldRecoverValidDate(sawCurrent, labels, isFragment)) {
+        labels.add(valid);
+      }
     }
 
     return [...labels].sort(compareVersions);
+  }
+
+  /**
+   * Non-prospective dct:valid recovery: only treat dct:valid as a version label when
+   * "current" was stripped from the scoped links, and either the response is
+   * whole-document or the retained fragment set has no other dated labels (in which
+   * case dct:valid stands in as the only pointer to the returned representation).
+   */
+  private static shouldRecoverValidDate(hadCurrent: boolean, labels: Set<string>, isFragment: boolean): boolean {
+    if (!hadCurrent) return false;
+    if (!isFragment) return true;
+    for (const label of labels) {
+      if (ISO_DATE_RE.test(label)) return false;
+    }
+    return true;
   }
 
   /**
