@@ -141,8 +141,12 @@ export class ResearchClient {
     options: ResearchSearchOptions = {}
   ): Promise<ResearchSearchResponse> {
     const params: Record<string, string> = { query };
-    if (options.page !== undefined) {
-      params.page = String(options.page);
+    if (options.page !== undefined && options.page > 1) {
+      // The Research API's `page` query parameter is 0-indexed (page=0 returns
+      // the first page) even though `response.page` is 1-indexed. Translate so
+      // callers can use a consistent 1-indexed contract in both directions.
+      // page<=1 falls through to the API default (page 1), matching LegislationClient.
+      params.page = String(options.page - 1);
     }
     addMatchingOptions(params, options);
     return this.getJson<ResearchSearchResponse>(

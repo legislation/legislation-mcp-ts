@@ -60,7 +60,7 @@ test("search() forwards case/stem/punctuation booleans as string values", async 
   assert.strictEqual(url.searchParams.get("punctuation"), "true");
 });
 
-test("search() forwards page as a URL param", async () => {
+test("search() forwards page as a URL param, translated to 0-indexed", async () => {
   const getRequestedUrl = installFetchSpy(SEARCH_JSON, {
     contentType: "application/json",
   });
@@ -69,7 +69,19 @@ test("search() forwards page as a URL param", async () => {
   await client.search("pension", { page: 3 });
 
   const url = new URL(getRequestedUrl()!);
-  assert.strictEqual(url.searchParams.get("page"), "3");
+  assert.strictEqual(url.searchParams.get("page"), "2");
+});
+
+test("search() omits page param for the first page", async () => {
+  const getRequestedUrl = installFetchSpy(SEARCH_JSON, {
+    contentType: "application/json",
+  });
+  const client = new ResearchClient();
+
+  await client.search("pension", { page: 1 });
+
+  const url = new URL(getRequestedUrl()!);
+  assert.strictEqual(url.searchParams.get("page"), null);
 });
 
 test("count() forwards case/stem/punctuation booleans as string values", async () => {
