@@ -6,3 +6,6 @@ dist/
 .env
 src/generated/
 samples/
+duties/
+data/
+*.db

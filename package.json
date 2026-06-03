@@ -19,7 +19,8 @@
     "watch:copy": "copyfiles -u 1 'src/resources/**/*' build/ --watch",
     "start": "node build/index.js",
     "inspector": "npx @modelcontextprotocol/inspector node build/index.js",
-    "test": "npm run build && node --test build/test/**/*.test.js"
+    "test": "npm run build && node --test build/test/**/*.test.js",
+    "build-duties-db": "node scripts/build-duties-db.js"
   },
   "keywords": [
     "mcp",
@@ -31,9 +32,11 @@
   "author": "The National Archives",
   "license": "OGL-UK-3.0",
   "dependencies": {
+    "@aws-sdk/client-rds-data": "^3.1057.0",
     "@hono/node-server": "^1.19.12",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@xmldom/xmldom": "^0.9.9",
+    "dotenv": "^17.4.2",
     "fast-xml-parser": "^5.5.10",
     "hono": "^4.12.11"
   },
@@ -44,6 +47,6 @@
     "typescript": "^6.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.16.0"
   }
 }

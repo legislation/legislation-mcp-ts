@@ -12,6 +12,10 @@
  * Set MCP_TRANSPORT=http to enable HTTP mode.
  */
 
+// Load .env before anything else: server.js reads DUTIES_DB_BACKEND and the
+// duties ARNs at module-load, so the file must populate process.env first.
+// No-op in production — App Runner injects env vars and ships no .env file.
+import "dotenv/config";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer, getResourceLoader } from "./server.js";
 import { startHttpServer } from "./transports/http.js";

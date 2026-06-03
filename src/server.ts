@@ -23,12 +23,17 @@ import * as searchLegislationSectionsSemantic from "./tools/search-legislation-s
 import * as searchEffects from "./tools/search-effects.js";
 import * as searchLegislationAdvanced from "./tools/search-legislation-advanced.js";
 import * as countLegislationAdvanced from "./tools/count-legislation-advanced.js";
+import * as searchPowersAndDuties from "./tools/search-powers-and-duties.js";
+import * as countPowersAndDuties from "./tools/count-powers-and-duties.js";
+import * as getPowersAndDuties from "./tools/get-powers-and-duties.js";
 import * as getResource from "./tools/get-resource.js";
 
 // Import API clients
 import { LegislationClient } from "./api/legislation-client.js";
 import { LexClient } from "./api/lex-client.js";
 import { ResearchClient } from "./api/research-client.js";
+import { openDuties } from "./api/duties-db.js";
+import { openDutiesPg } from "./api/duties-db-pg.js";
 
 // Import resource loader
 import { ResourceLoader } from "./resources/resource-loader.js";
@@ -37,6 +42,15 @@ import { ResourceLoader } from "./resources/resource-loader.js";
 const apiClient = new LegislationClient();
 const lexClient = new LexClient();
 const researchClient = new ResearchClient();
+// Duties backend selection. 'pg' uses Aurora Serverless v2 via the Data API
+// (set by the CDK when the cluster is wired in); anything else falls back to
+// the on-instance SQLite database. See
+// docs/adr/2026-05-29-postgres-migration-plan.md.
+const dutiesBackend = process.env.DUTIES_DB_BACKEND ?? "sqlite";
+// stderr, not stdout: in the default stdio transport, stdout carries the MCP
+// JSON-RPC frames. This runs at module load, before the transport connects.
+console.error(`[init] Duties backend: ${dutiesBackend}`);
+const dutiesDb = dutiesBackend === "pg" ? openDutiesPg() : openDuties();
 const resourceLoader = new ResourceLoader();
 
 const toolAnnotations = {
@@ -128,6 +142,28 @@ export function createServer(): Server {
           inputSchema: countLegislationAdvanced.inputSchema,
           annotations: toolAnnotations,
         },
+        ...(dutiesDb
+          ? [
+              {
+                name: searchPowersAndDuties.name,
+                description: searchPowersAndDuties.description,
+                inputSchema: searchPowersAndDuties.inputSchema,
+                annotations: toolAnnotations,
+              },
+              {
+                name: countPowersAndDuties.name,
+                description: countPowersAndDuties.description,
+                inputSchema: countPowersAndDuties.inputSchema,
+                annotations: toolAnnotations,
+              },
+              {
+                name: getPowersAndDuties.name,
+                description: getPowersAndDuties.description,
+                inputSchema: getPowersAndDuties.inputSchema,
+                annotations: toolAnnotations,
+              },
+            ]
+          : []),
         {
           name: getResource.name,
           description: getResource.description,
@@ -140,7 +176,12 @@ export function createServer(): Server {
 
   // Handler: Execute a tool
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+    const { name, arguments: rawArgs } = request.params;
+    // MCP `arguments` is optional: normalise an omitted value to {} at the
+    // dispatch boundary so all-optional tools accept no-argument calls. A
+    // genuinely malformed non-object still flows through to each tool's own
+    // validation, which rejects it.
+    const args = rawArgs ?? {};
 
     try {
       switch (name) {
@@ -179,6 +220,18 @@ export function createServer(): Server {
             args as any,
             researchClient
           );
+
+        case searchPowersAndDuties.name:
+          if (!dutiesDb) throw new Error("Duties database not available");
+          return await searchPowersAndDuties.execute(args as any, dutiesDb);
+
+        case countPowersAndDuties.name:
+          if (!dutiesDb) throw new Error("Duties database not available");
+          return await countPowersAndDuties.execute(args as any, dutiesDb);
+
+        case getPowersAndDuties.name:
+          if (!dutiesDb) throw new Error("Duties database not available");
+          return await getPowersAndDuties.execute(args as any, dutiesDb);
 
         case getResource.name:
           return await getResource.execute(args as any, resourceLoader);

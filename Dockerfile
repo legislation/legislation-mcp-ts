@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -11,11 +11,17 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Precondition check: the powers-and-duties SQLite database must be pre-built
+# on the host (the production stage will COPY it). Fail fast in the builder
+# with a clear message rather than letting the production COPY fail later with
+# a Docker-internal "file not found" error.
+RUN test -f data/duties.db || (echo "ERROR: data/duties.db not found in build context." && echo "       Run 'npm run build-duties-db' on the host before 'docker build'." && exit 1)
+
 # Build the application
 RUN npm run build
 
 # Production image
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -31,6 +37,14 @@ RUN npm ci --omit=dev
 
 # Copy built application from builder with correct ownership
 COPY --from=builder --chown=nodejs:nodejs /app/build ./build
+
+# Copy the pre-built powers-and-duties SQLite database.
+# The image is expected to include it; the operator must run
+# `npm run build-duties-db` on the build host before `docker build`. The COPY
+# below will fail with a clear error if the file is missing — see the
+# precondition check, which runs in the builder stage where the build context
+# is still available, so the failure surfaces before the production COPY.
+COPY --chown=nodejs:nodejs data/duties.db ./data/duties.db
 
 # Switch to non-root user
 USER nodejs
