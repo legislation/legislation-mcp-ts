@@ -19,7 +19,7 @@ export const name = "search_powers_and_duties";
 
 export const description = `Search the National Archives' powers-and-duties research dataset. Each row identifies a power or duty granted to or imposed on an actor by a specific provision of UK legislation, with the action expressed in plain English.
 
-Use \`query\` for free-text search over the action, condition, and actor fields. Pass natural language — words are matched as required terms (implicit AND); wrap a phrase in double quotes to require those words adjacent (e.g. \`"local authority"\`). Punctuation, apostrophes, hyphens, and stray characters are handled safely. Combine with filters for jurisdiction (\`enactment_type\`), year range, actor name, modality (duty vs power), priority (primary vs secondary), and inference (explicit vs implicit).
+Use \`query\` for free-text search over the action, condition, and actor fields. Pass natural language — words are matched as required terms (implicit AND); wrap a phrase in double quotes to require those words adjacent (e.g. \`"local authority"\`); put \`OR\` between terms to match either (e.g. \`report OR notify\`); and prefix a term with \`-\` to exclude it (e.g. \`inspection -fee\`). Punctuation, apostrophes, hyphens, and stray characters are handled safely. Combine with filters for jurisdiction (\`enactment_type\`), year range, actor name, modality (duty vs power), priority (primary vs secondary), and inference (explicit vs implicit).
 
 Each result includes \`enactment_uri\` and \`section_uri\`. Pass \`enactment_uri\` straight to get_powers_and_duties's \`enactment\` field; for get_legislation_metadata / get_legislation_fragment, split it into \`type\`/\`year\`/\`number\` (using the fragment tail, e.g. \`section/5\`, as \`fragmentId\`). Each result's \`actorAliases\` resolve the actor term to concrete instances; an alias's \`bodyUri\`, when present, is the canonical legislation.gov.uk organisation identifier for that body (dereferenceable linked data).
 
@@ -31,7 +31,7 @@ export const inputSchema = {
     query: {
       type: "string",
       description:
-        "Natural-text search over the action, condition, and actor fields. Words are required terms (implicit AND); wrap a phrase in double quotes to require adjacency. Examples: `court report`, `\"local authority\"`, `Children's Act report`. Punctuation and special characters are handled safely.",
+        "Natural-text search over the action, condition, and actor fields. Words are required terms (implicit AND); wrap a phrase in double quotes to require adjacency; `OR` between terms matches either; a `-` prefix excludes a term. Examples: `court report`, `\"local authority\"`, `report OR notify`, `inspection -fee`. Punctuation and special characters are handled safely.",
     },
     enactment: {
       type: "string",
