@@ -32,7 +32,6 @@ import * as getResource from "./tools/get-resource.js";
 import { LegislationClient } from "./api/legislation-client.js";
 import { LexClient } from "./api/lex-client.js";
 import { ResearchClient } from "./api/research-client.js";
-import { openDuties } from "./api/duties-db.js";
 import { openDutiesPg } from "./api/duties-db-pg.js";
 
 // Import resource loader
@@ -42,15 +41,15 @@ import { ResourceLoader } from "./resources/resource-loader.js";
 const apiClient = new LegislationClient();
 const lexClient = new LexClient();
 const researchClient = new ResearchClient();
-// Duties backend selection. 'pg' uses Aurora Serverless v2 via the Data API
-// (set by the CDK when the cluster is wired in); anything else falls back to
-// the on-instance SQLite database. See
-// docs/adr/2026-05-29-postgres-migration-plan.md.
-const dutiesBackend = process.env.DUTIES_DB_BACKEND ?? "sqlite";
+// Powers-and-duties tools are backed by Aurora Serverless v2 Postgres via the
+// RDS Data API. SQLite was removed once Postgres was confirmed in production
+// (docs/adr/2026-05-29-postgres-migration-plan.md §Phase 5). openDutiesPg()
+// returns null when the cluster env vars are absent (e.g. local dev without
+// AWS wiring), which disables the duties tools rather than failing startup.
+const dutiesDb = openDutiesPg();
 // stderr, not stdout: in the default stdio transport, stdout carries the MCP
 // JSON-RPC frames. This runs at module load, before the transport connects.
-console.error(`[init] Duties backend: ${dutiesBackend}`);
-const dutiesDb = dutiesBackend === "pg" ? openDutiesPg() : openDuties();
+console.error(`[init] Duties backend: ${dutiesDb ? "pg (Aurora Data API)" : "disabled"}`);
 const resourceLoader = new ResourceLoader();
 
 const toolAnnotations = {

@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { execute } from "../../tools/count-powers-and-duties.js";
-import type { DutiesDbApi } from "../../api/duties-db.js";
+import type { DutiesDbApi } from "../../api/duties-types.js";
 
 test("count_powers_and_duties rejects an invalid group_by before touching the DB", async () => {
   const db = {

@@ -353,7 +353,7 @@ function clampBatchSize(n) {
   return n;
 }
 
-// --- CSV + row helpers (mirror scripts/build-duties-db.js) ---
+// --- CSV + row helpers ---
 
 function* parseCsv(text) {
   let i = 0;

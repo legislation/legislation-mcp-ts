@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { normalizeEnactmentUri } from "../../api/duties-db.js";
+import { normalizeEnactmentUri } from "../../api/duties-types.js";
 
 test("https → http", () => {
   assert.strictEqual(

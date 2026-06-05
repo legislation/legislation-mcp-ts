@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { execute } from "../../tools/search-powers-and-duties.js";
-import type { DutiesDbApi, SearchFilters, SearchResult } from "../../api/duties-db.js";
+import type { DutiesDbApi, SearchFilters, SearchResult } from "../../api/duties-types.js";
 
 interface CapturedCall {
   filters: SearchFilters;

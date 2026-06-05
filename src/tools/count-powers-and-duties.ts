@@ -13,7 +13,7 @@ import {
   Priority,
   SearchFilters,
   validateDutyFilters,
-} from "../api/duties-db.js";
+} from "../api/duties-types.js";
 
 const GROUP_BY_VALUES: GroupBy[] = [
   "enactment_type",

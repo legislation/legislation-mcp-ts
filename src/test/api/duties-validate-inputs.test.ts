@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { validateDutyFilters } from "../../api/duties-db.js";
+import { validateDutyFilters } from "../../api/duties-types.js";
 
 test("passes for empty input", () => {
   assert.strictEqual(validateDutyFilters({}), null);

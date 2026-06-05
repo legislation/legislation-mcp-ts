@@ -13,7 +13,7 @@ import {
   Priority,
   SearchFilters,
   validateDutyFilters,
-} from "../api/duties-db.js";
+} from "../api/duties-types.js";
 
 export const name = "search_powers_and_duties";
 

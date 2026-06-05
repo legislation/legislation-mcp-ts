@@ -13,7 +13,7 @@ import {
   normalizeEnactmentUri,
   Priority,
   validateDutyFilters,
-} from "../api/duties-db.js";
+} from "../api/duties-types.js";
 
 export const name = "get_powers_and_duties";
 

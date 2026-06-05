@@ -1,9 +1,9 @@
 /**
  * Adapter for the powers-and-duties Aurora Postgres database via Data API.
  *
- * Same public shape as duties-db.ts (the SQLite adapter), so the tool layer
- * does not care which one is wired up. Selection happens in server.ts based
- * on the DUTIES_DB_BACKEND env var.
+ * Implements the shared DutiesDbApi contract (duties-types.ts); the tool layer
+ * depends only on that interface. This is the sole duties backend — server.ts
+ * wires it in via openDutiesPg().
  *
  * Data API is HTTPS-stateless — no connection to open, no pool to manage,
  * no close() to call. The Aurora cluster is provisioned by the CDK DataStack
@@ -29,7 +29,7 @@ import type {
   ProvisionFilters,
   SearchFilters,
   SearchResult,
-} from "./duties-db.js";
+} from "./duties-types.js";
 
 const SELECT_COLUMNS = `
   duty_id, duty_uri, enactment_uri, enactment_title, enactment_year,

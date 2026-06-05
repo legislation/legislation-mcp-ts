@@ -19,8 +19,7 @@
     "watch:copy": "copyfiles -u 1 'src/resources/**/*' build/ --watch",
     "start": "node build/index.js",
     "inspector": "npx @modelcontextprotocol/inspector node build/index.js",
-    "test": "npm run build && node --test build/test/**/*.test.js",
-    "build-duties-db": "node scripts/build-duties-db.js"
+    "test": "npm run build && node --test build/test/**/*.test.js"
   },
   "keywords": [
     "mcp",

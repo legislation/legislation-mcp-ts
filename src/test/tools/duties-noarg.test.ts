@@ -14,7 +14,7 @@ import assert from "node:assert";
 import { execute as searchExecute } from "../../tools/search-powers-and-duties.js";
 import { execute as countExecute } from "../../tools/count-powers-and-duties.js";
 import { execute as getExecute } from "../../tools/get-powers-and-duties.js";
-import type { DutiesDbApi } from "../../api/duties-db.js";
+import type { DutiesDbApi } from "../../api/duties-types.js";
 
 function searchStub(): DutiesDbApi {
   return {

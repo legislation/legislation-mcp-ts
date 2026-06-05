@@ -1,7 +1,7 @@
 # Postgres Migration Plan (Sequencing Ahead of App Runner Sunset)
 
 **Date:** 2026-05-29 (target architecture revised 2026-06-01)
-**Status:** Draft — sequencing proposal, not yet committed
+**Status:** Phases 1–5 implemented. Phase 4 (cutover) confirmed in production 2026-06-03; Phase 5 (SQLite removed) committed 2026-06-04 (awaiting deploy). Phase 6 (App Runner → Lambda) not started.
 **Supersedes (in part):** [2026-05-26 — Powers-and-duties on SQLite](./2026-05-26-powers-and-duties-sqlite.md)
 
 ## Context
@@ -95,7 +95,9 @@ Flip the flag in deployed config. Watch for regressions. Leave the SQLite adapte
 
 #### Known behavioural differences between the two backends
 
-The Postgres adapter is not a byte-identical reimplementation of the SQLite one. The following differences exist during the SQLite→Postgres overlap; all are **transient** — they vanish at Phase 5 when SQLite is removed, leaving a single behaviour — and matter only if the two backends are A/B-compared meanwhile.
+> **Resolved at Phase 5 (2026-06-04):** SQLite has been removed, so the differences below are now historical — Postgres is the single behaviour. They are kept here as the record of what changed for anyone comparing against the pre-cutover SQLite results.
+
+The Postgres adapter is not a byte-identical reimplementation of the SQLite one. The following differences existed during the SQLite→Postgres overlap; all were **transient** — they vanished at Phase 5 when SQLite was removed, leaving a single behaviour — and mattered only if the two backends were A/B-compared meanwhile.
 
 1. **Actor-alias matching: both backends, but Postgres is lossless.** Both match the actor term as written (e.g. "NHS body") *or* a resolved alias (e.g. "Local Health Board"). Postgres scans the full `actor_aliases` JSON array, so it matches *any* alias. SQLite matches only the alias that survived its build dedup — `INSERT OR IGNORE` on `duty_id` keeps the first of a multi-alias duty's rows — so for the ~2.3% of duties with several aliases it can miss the dropped ones. (Surfaced by review: the tool description promises alias matching, so the SQLite actor filter was extended from term-only to term-or-surviving-alias; full fidelity still requires Postgres.)
 2. **Full-text query operators (Postgres only).** SQLite's `buildFtsExpression` strips FTS5 metacharacters and treats every token as a required literal (implicit AND). Postgres uses `websearch_to_tsquery`, which additionally honours `OR`, `-negation`, and `"quoted phrases"`. `licence OR permit` is three AND-ed literals on SQLite but a real disjunction on Postgres.
@@ -104,11 +106,21 @@ The Postgres adapter is not a byte-identical reimplementation of the SQLite one.
 
 The `search_powers_and_duties` tool description deliberately does **not** advertise the operator syntax (#2) while SQLite remains a selectable (and default) backend: on SQLite, `OR` and a leading `-` are sanitised into required literal terms, which silently narrows or inverts results rather than erroring (`licence OR permit` becomes "must contain licence AND or AND permit"; `report -annual` becomes "must contain report AND annual"). The description gains the `OR`/negation syntax at Phase 5, once Postgres is the only backend.
 
-### Phase 5 — Stop baking SQLite into the image
+### Phase 5 — Stop baking SQLite into the image ✅ done 2026-06-04 (code; not yet deployed)
 
-Once Phase 4 is stable: remove the Dockerfile precondition check, drop `data/duties.db`, delete the SQLite adapter. Container image drops by ~2 GB. Separate commit, easy to roll back.
+Done as a single reversible commit, after Phase 4 was confirmed in production (prod on `pg`, Aurora-only data signatures present, duties tools working end-to-end):
 
-Also resolve one loose end here: the `idx_duties_actor_aliases` GIN index (`jsonb_path_ops`) only accelerates `@>` containment queries, but the actor filter actually runs `jsonb_array_elements` + `ILIKE` (to support case-insensitive substring matching, which `@>` cannot do). So the index is currently unused by any query path — it cost a little to build at ingest and occupies some storage for no read benefit. Decide then whether to drop it or add an exact-match alias path that uses it. It is harmless to leave for now: the actor filter is normally combined with btree-indexed filters (modality, type, year) that narrow the row set before the per-row alias scan runs.
+- `src/api/duties-db.ts` renamed (`git mv`) to `src/api/duties-types.ts` and pared down to the shared, backend-agnostic contract: the row/filter/result types, the `DutiesDbApi` interface, and the two boundary helpers (`normalizeEnactmentUri`, `validateDutyFilters`). The SQLite-specific parts — the `DutiesDb` class, `openDuties`, `buildFtsExpression`, `buildWhere`, `SELECT_COLUMNS`/`RawRow`/`rowToDuty`, and all `node:sqlite` usage — were deleted. (Kept as a rename rather than a fresh file so blame survives on the retained helpers.)
+- `server.ts` is now pg-only: `openDutiesPg()` is wired in directly and the `DUTIES_DB_BACKEND ?? "sqlite"` switch is gone, removing the silent-fallback footgun. The duties tools still self-disable (unregister) when the cluster ARNs are absent.
+- `Dockerfile`: removed the `data/duties.db` precondition check and the production-stage `COPY data/duties.db` (image drops ~2 GB).
+- Deleted `scripts/build-duties-db.js` and its `build-duties-db` npm script; deleted the two SQLite-only tests (`duties-db.test.ts`, `duties-fts-expression.test.ts`). The pg `buildWhere`/`buildOrderBy`, URI-normalisation, input-validation, and tool-layer tests remain (429 pass, `npm run check` clean).
+- Stale references swept (`.env.example`, `src/index.ts` comment, `ingest-duties-pg.js` comment).
+
+Note: the local `data/duties.db` file is left on disk (it is gitignored, so not part of the commit) as a convenience; it is no longer referenced by any code path.
+
+**Still open (deliberately deferred, not blockers):**
+- The `idx_duties_actor_aliases` GIN index (`jsonb_path_ops`) only accelerates `@>` containment queries, but the actor filter runs `jsonb_array_elements` + `ILIKE` (case-insensitive substring, which `@>` cannot do). So the index is unused by any query path. Decide whether to drop it or add an exact-match alias path that uses it. Touching it means a live Aurora DDL change, so it is left for the pg_trgm/indexing follow-up rather than this code-only commit. Harmless to leave: the actor filter is normally combined with btree-indexed filters (modality, type, year) that narrow the row set first.
+- The `search_powers_and_duties` description still does not advertise the `OR`/`-negation`/`"phrase"` operator syntax (see divergence #2 below). Now that Postgres is the only backend, `websearch_to_tsquery` always honours those operators, so the description *could* document them — but that is a user-facing wording/behaviour change, left as its own decision.
 
 ### Phase 6 — App Runner → Lambda (separate migration, on App Runner's deadline)
 
