@@ -24,6 +24,7 @@ export type LegislationResponse =
 
 export class LegislationClient {
   private baseUrl = "https://www.legislation.gov.uk";
+  private userAgent = "legislation-mcp-server/0.1.0 (contact: jim@jurisdatum.com)";
 
   /**
    * Retrieve a full legislation document by citation
@@ -203,11 +204,65 @@ export class LegislationClient {
     }
     if (params.affectingNumber) queryParams.append("affecting-number", params.affectingNumber);
     if (params.applied !== undefined) queryParams.append("applied", params.applied ? "applied" : "unapplied");
-    if (params.page && params.page > 1) queryParams.append("page", String(params.page));
 
+    // `page` is intentionally NOT added to the search-form query string here —
+    // it must be re-attached to the canonical URL after the redirect (see
+    // fetchChangesFeed).
     const url = `${this.baseUrl}/changes/data.feed?${queryParams.toString()}`;
 
-    return this.fetchText(url);
+    return this.fetchChangesFeed(url, params.page);
+  }
+
+  /**
+   * Fetch a changes feed, preserving `page` across the canonicalising redirect.
+   *
+   * The `/changes/data.feed` search-form endpoint answers with a 301 redirect to
+   * a canonical path-based URL (e.g. `/changes/affected/ukpga/1998/46/data.feed`),
+   * re-encoding every search parameter into the path — EXCEPT `page`, which is a
+   * genuine query parameter and is dropped along with the rest of the query
+   * string. Letting `fetch` follow the redirect automatically therefore loses
+   * `page`, so every request comes back as page 1 (LMSC-40).
+   *
+   * We instead follow the redirect ourselves and re-attach `page` at every hop,
+   * so it lands on the canonical URL, which does honour it.
+   */
+  private async fetchChangesFeed(searchUrl: string, page?: number): Promise<string> {
+    // Page 1 has no pagination parameter to preserve, so a normal
+    // redirect-following fetch is correct and costs a single round trip.
+    if (!page || page <= 1) {
+      return this.fetchText(searchUrl);
+    }
+
+    let url = withPage(searchUrl, page);
+    try {
+      for (let hop = 0; hop < 5; hop++) {
+        const response = await fetch(url, {
+          redirect: "manual",
+          headers: { "User-Agent": this.userAgent },
+        });
+        // A 3xx here strips the query string; re-attach `page` to the target.
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get("location");
+          if (location) {
+            // Drain the (small) redirect body so undici can reuse the socket.
+            // `body.cancel()` releases it but does not drain it, which can
+            // prevent connection reuse, so read it to completion instead.
+            await response.arrayBuffer();
+            url = withPage(new URL(location, url).toString(), page);
+            continue;
+          }
+        }
+        return this.readText(response, url);
+      }
+      // Too many redirects. Falling back to an automatic-redirect fetch would
+      // defeat pagination preservation and bypass this hop limit, so fail loudly.
+      throw new Error("Too many redirects (limit: 5) resolving changes feed");
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to fetch ${url}: ${error.message}`);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -218,7 +273,7 @@ export class LegislationClient {
     try {
       const response = await fetch(url, {
         headers: {
-          "User-Agent": "legislation-mcp-server/0.1.0 (contact: jim@jurisdatum.com)"
+          "User-Agent": this.userAgent
         }
       });
 
@@ -258,18 +313,11 @@ export class LegislationClient {
     try {
       const response = await fetch(url, {
         headers: {
-          "User-Agent": "legislation-mcp-server/0.1.0 (contact: jim@jurisdatum.com)"
+          "User-Agent": this.userAgent
         }
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Not found: ${url}`);
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.text();
+      return await this.readText(response, url);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Failed to fetch ${url}: ${error.message}`);
@@ -277,6 +325,31 @@ export class LegislationClient {
       throw error;
     }
   }
+
+  /**
+   * Read a text response body, mapping non-OK statuses to errors.
+   * `url` is only used for the "Not found" message.
+   */
+  private async readText(response: Response, url: string): Promise<string> {
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Not found: ${url}`);
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.text();
+  }
+}
+
+/**
+ * Return `url` with its `page` query parameter set to `page`, replacing any
+ * existing one. Used to carry pagination across the changes-feed redirect.
+ */
+function withPage(url: string, page: number): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set("page", String(page));
+  return parsed.toString();
 }
 
 /**
