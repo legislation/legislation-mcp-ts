@@ -1,7 +1,7 @@
 # Postgres Migration Plan (Sequencing Ahead of App Runner Sunset)
 
 **Date:** 2026-05-29 (target architecture revised 2026-06-01)
-**Status:** Phases 1–5 implemented. Phase 4 (cutover) confirmed in production 2026-06-03; Phase 5 (SQLite removed) committed 2026-06-04 (awaiting deploy). Phase 6 (App Runner → Lambda) not started.
+**Status:** Phases 1–5 implemented. Phase 4 (cutover) confirmed in production 2026-06-03; Phase 5 (SQLite removed) code-complete 2026-06-04, committed 2026-06-05 (`887e397`), awaiting deploy; search-operator docs (`OR`/`-negation`) committed 2026-06-05 (`8828c90`), awaiting deploy. Follow-on trigram indexing (roadmap #7) scoped 2026-06-05, not yet implemented. Phase 6 (App Runner → Lambda) not started.
 **Supersedes (in part):** [2026-05-26 — Powers-and-duties on SQLite](./2026-05-26-powers-and-duties-sqlite.md)
 
 ## Context
@@ -73,7 +73,7 @@ Cost: ~$45/mo at 0.5 ACU sustained.
 
 The ingest is **not** part of the MCP. This is the most important Lambda-anticipating decision in the whole plan: a separate Fargate task (triggered by EventBridge) reads the CSVs and loads them into the cluster — also via the Data API. Initial bootstrap can be a script run from a developer machine; Data API needs no SSM port-forward or jump host, just IAM credentials with the right role.
 
-Note that Data API doesn't support `COPY` (it is a request/response RPC, not a streaming protocol). For ingest, that means batched `INSERT`s via `BatchExecuteStatement` (up to 1,000 parameter sets per call). For 1.76M rows that's ~1,760 batch calls — wall-clock around 4–6 minutes at ~150 ms per call. The ingest script needs to be resumable so a network blip doesn't restart from row zero (a `bootstrap_progress` table tracking the last successfully-loaded file + offset is enough).
+Note that Data API doesn't support `COPY` (it is a request/response RPC, not a streaming protocol). For ingest, that means batched `INSERT`s via `BatchExecuteStatement` (up to 1,000 parameter sets per call). For 1.76M rows that's ~1,760 batch calls — wall-clock around 4–6 minutes at ~150 ms per call. The ingest script needs to be resumable so a network blip doesn't restart from row zero (a `bootstrap_progress` table is enough). As built, resumption is **per-file atomic**, not file-plus-row-offset: the script pre-aggregates each CSV in memory (folding multi-alias rows into one `actor_aliases` array), so a file is either marked complete or reprocessed from scratch on restart — `ON CONFLICT DO NOTHING` makes the replay idempotent.
 
 This decoupling survives every subsequent compute migration unchanged. When the MCP becomes a Lambda, the ingest pipeline does not care.
 
@@ -84,7 +84,7 @@ Both adapters live in the codebase during the transition. A new `duties-db-pg.ts
 - `tsvector` column with GIN index on duty description text.
 - Port `buildFtsExpression` from FTS5 syntax to `tsquery` syntax.
 - Port `validateDutyFilters` (mostly unchanged — types and bounds are the same).
-- Port the queries themselves; ranking will use `ts_rank_cd`.
+- Port the queries themselves; ranking uses `ts_rank` (as built — see divergence #4).
 - Confirm result sizes stay under Data API's 1 MB response cap. Our queries are already paginated, so this should hold — worth verifying once on real data.
 
 A feature flag (environment variable) chooses which adapter the MCP wires up at module load. This lets us flip back instantly if the Postgres path reveals a surprise.
@@ -133,6 +133,75 @@ By this point the code is already cloud-data-aware and the container image is sm
 
 The MCP code itself probably needs zero substantive changes at this phase.
 
+## Follow-on work — trigram fuzzy actor matching & indexing
+
+> **Naming:** this is the duties-tool hardening roadmap's item **#7** (sometimes called "Phase 2" of that roadmap). It is **not** this ADR's Phase 2 (which is the ingest pipeline). It is post-migration enhancement work, scoped here because it is database-side and builds on the schema above. It is **independent of Phase 6** (Lambda) and can land before or after it. Scoped 2026-06-05; not yet implemented.
+
+### Motivation
+
+The actor filter (`duties-db-pg.ts` `buildWhere`) matches the legislation actor term with `actor ILIKE '%term%'` plus a stemmed `to_tsvector @@ plainto_tsquery` disjunct. The `%term%` substring form **cannot use** the existing btree `idx_duties_actor` (btree only helps anchored/prefix matches), so it is a **sequential scan** over 1.76M rows. Two goals:
+- **2a — index the substring match** so `actor ILIKE '%term%'` is index-driven (pure performance, no behaviour change).
+- **2b — add true fuzzy matching** (typo tolerance via trigram similarity) as an opt-in feature on top of 2a (behaviour + tool-description change).
+
+### Live facts (probed read-only 2026-06-05)
+
+| Metric | Value |
+| --- | --- |
+| Rows | 1,760,275 |
+| `pg_trgm` extension | **not installed** |
+| Table total / heap | 2,449 MB / 1,722 MB |
+| `idx_duties_search_tsv` (GIN) | 102 MB |
+| `idx_duties_actor` (btree) | 23 MB |
+| `idx_duties_actor_aliases` (GIN, dead) | 6.5 MB |
+| Postgres version | 16.13 |
+
+### The build constraint and the chosen mechanism
+
+The existing GIN indexes were all built on an **empty** table pre-ingest (Phase 1). A `CREATE INDEX` on the now-populated 1.76M-row table will likely exceed the **RDS Data API's ~45 s statement timeout**. That is the unknown that blocked this work.
+
+**Chosen approach: Data API with `--continue-after-timeout`, then poll for completion.** AWS's documented pattern for long DDL over the Data API — the statement keeps running server-side after the call times out. Needs no new access (no VPC/bastion/`psql`); uses the same tooling as the ingest scripts.
+
+- **Plain `CREATE INDEX`, not `CONCURRENTLY`.** `CONCURRENTLY` cannot run inside a transaction and can leave an *invalid* index on failure; plain `CREATE INDEX` is transactional (clean rollback, no partial index). Its `SHARE` lock blocks **writes** but not **reads** for the build's duration — fine here, because the table is read-mostly and batch-ingested (no live writes) and the MCP tools only read. Run it in a quiet window regardless.
+- A non-concurrent index only becomes visible to other sessions when its build transaction commits, so "the index name appears in `pg_class`" *is* the completion signal.
+
+**Fallbacks — note we do _not_ currently have `psql` access** to the cluster (Serverless v2, effectively VPC-only — Data API exists precisely to avoid that networking). So the realistic plan B stays **Data-API-only**: add `idx_duties_actor_trgm` to `duties-schema.sql`, then `TRUNCATE` + re-ingest (`DUTIES_INGEST_RESET=1`, an already-supported flag) so the index is created on the empty table (fast) and filled during load. Heavier — a full re-load of 1.76M rows, slower per-insert with a GIN index present — but proven tooling, no new access. Plan C (direct `psql` + `CREATE INDEX CONCURRENTLY`) would require standing up access we don't have (bastion/SSM tunnel) and isn't worth it unless A and B both fail. Net: `continue-after-timeout` is not just preferred, it's the only in-place option without new infra — and a server-side statement, once detached from the timed-out call, runs to completion subject only to Postgres's own `statement_timeout` (0/unlimited on Aurora by default), so the build should finish regardless of duration.
+
+### DDL — the 2a change set (one maintenance session)
+
+All three use the scripts' env-var ARNs (`$DUTIES_DB_CLUSTER_ARN`, `$DUTIES_DB_SECRET_ARN`, `--profile jd-tna`, `--database duties`):
+
+1. `CREATE EXTENSION IF NOT EXISTS pg_trgm;` — fast, prerequisite. (Aurora master user has the privilege.)
+2. `CREATE INDEX idx_duties_actor_trgm ON duties USING GIN (actor gin_trgm_ops);` — **fire with `--continue-after-timeout`**, then poll. This is what makes `actor ILIKE '%term%'` index-driven.
+3. `DROP INDEX idx_duties_actor_aliases;` — drops the 6.5 MB dead GIN (see "Still open" under Phase 5). Metadata-only, no timeout risk; folded in here.
+
+Poll loop after firing step 2 (expect the call itself to return a timeout while the build continues):
+
+```sql
+-- in progress (one row per active build):
+SELECT phase, round(100.0 * blocks_done / NULLIF(blocks_total, 0), 1) AS pct
+FROM pg_stat_progress_create_index;
+-- done when this returns a row with indisvalid = t:
+SELECT i.indisvalid
+FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+WHERE c.relname = 'idx_duties_actor_trgm';
+```
+
+### Verification
+
+`EXPLAIN (ANALYZE, BUFFERS)` on a representative `actor ILIKE '%authority%'` query **before and after** — confirm the plan switches from a seqscan to a `Bitmap Index Scan` on `idx_duties_actor_trgm`, and capture the timing delta. The `count_powers_and_duties` / `search_powers_and_duties` actor-filtered paths are the consumers to re-check.
+
+### Deferred to Phase 3 — alias-name fuzzy indexing
+
+Indexing the **alias names** inside the `actor_aliases` JSONB array is **not** in this change. Trigram can't index unnested array elements, and a generated column can't call `jsonb_array_elements` (not `IMMUTABLE` — same limit noted at the `search_tsv` definition). It needs a real maintained `alias_names_text` column populated by the ingest plus a **full re-ingest** of all 1.76M rows — a bigger, riskier change kept separate. Until then the alias disjunct stays a seqscan, acceptable because it is normally combined with the now-indexed `actor` predicate and the btree filters (modality/type/year) that narrow the row set first.
+
+### Honest note on `ts_rank`
+
+The roadmap folds in "`ts_rank` ordering is unindexed." `ts_rank` is **inherently non-indexable** — the rank depends on the query and is computed per matching row. The `search_tsv` GIN already drives the `@@` predicate (only matched rows are ranked) and the empty/stopword pathological cases are already guarded in `buildOrderBy`. So 2a adds **no** "rank index"; the honest task is to *measure* the common-term worst case (e.g. `report` → ~60k matches all ranked) and decide whether to bound it — likely verify-and-leave.
+
+### Rollback
+
+`DROP INDEX idx_duties_actor_trgm;` (fast). The dropped `idx_duties_actor_aliases` is recreatable from `duties-schema.sql:70` if ever needed. `pg_trgm` can stay installed harmlessly.
+
 ## What "Lambda-anticipating" means concretely during Phases 1–5
 
 The code is already mostly Lambda-shaped:
@@ -180,11 +249,13 @@ These findings drove two changes from earlier drafts:
 1. Originally Phase 1 would have **introduced a VPC** with private subnets, an RDS instance, an App Runner VPC Connector, and (once we realised the MCP makes outbound calls to public APIs like `research.legislation.gov.uk`) a NAT Gateway. Total cost would have risen to ~$60/mo, and the project would have acquired a VPC it has to start reasoning about. We changed the target architecture instead — see [Why this target](#why-this-target) — to **Aurora Serverless v2 + Data API**, which needs no VPC at all.
 2. The "Secrets Manager vs IAM" open question collapsed: Aurora Data API authenticates via IAM directly, with no DB password to store or rotate.
 
-## Open questions to resolve before Phase 1
+## Open questions before Phase 1 (resolved)
 
-- **Schema** — sketch the duties table schema with appropriate column types, `tsvector` strategy (stored vs generated column), and the GIN index definition. A small follow-up doc.
-- **Result-size sanity check** — confirm the largest reasonable query response stays under Data API's 1 MB cap. Our queries are paginated, so this should hold, but worth verifying once on real data.
-- **Ingest cadence** — how often does the CSV source actually change? This determines whether scheduled automation in Phase 2 is needed immediately or can be deferred.
+Kept as the record of what these resolved to:
+
+- **Schema** — ✅ resolved. Settled in `scripts/duties-schema.sql`: a stored generated `search_tsv` column over action+condition+actor, a GIN index on it, btree indexes on the filter columns, and a `jsonb_path_ops` GIN on `actor_aliases` (the last since found unused — see Phase 5 "Still open" and the trigram follow-on).
+- **Result-size sanity check** — ✅ resolved. Queries are paginated (default 25, max 100 results) and have run in production since the 2026-06-03 cutover without hitting the Data API 1 MB cap.
+- **Ingest cadence** — ⚠️ partially open. Bootstrap and reloads are run manually via `scripts/ingest-duties-pg.js` from a developer machine (Data API, resumable). The scheduled EventBridge → Fargate automation described in Phase 2 has **not** been built — deferred until the source-CSV refresh frequency justifies it. Not blocking.
 
 ## Future datasets
 
