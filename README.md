@@ -18,6 +18,16 @@ Model Context Protocol (MCP) server providing AI assistants with access to UK le
 - **search_legislation_sections_semantic** - Semantic search across individual sections (experimental)
 - **get_resource** - Fetch an MCP resource by URI. Intended for API-connected agents that support tool calls but cannot access MCP resources directly; not needed for local MCP clients.
 
+#### Powers and Duties
+
+These three tools are **registered only when the duties Postgres backend is configured** (see [Powers and Duties Database](#powers-and-duties-database-optional) below). Without that configuration the server logs `Postgres duties backend disabled` at startup and the tools do not appear in the tool list.
+
+- **search_powers_and_duties** - Search The National Archives' powers-and-duties research dataset. Each row identifies a power or duty granted to or imposed on an actor by a specific provision of UK legislation, with the action expressed in plain English. Free-text `query` supports implicit AND, `"quoted phrases"`, `OR` between terms, and `-` negation; combine with filters for `enactment_type`, year range, `actor`, `modality` (duty/power), `priority` (primary/secondary), and `inference` (explicit/implicit).
+- **count_powers_and_duties** - Count rows in the dataset, optionally grouped by one dimension (`enactment_type`, `enactment_year`, `actor`, `modality`, `priority`, `inference`, or `enactment_uri`). Grouped results are top-N by count, with a `groupsTruncated` flag.
+- **get_powers_and_duties** - Return all powers and duties for a single Act, SI, or Regulation, in best-effort provision order. Paginated, with an optional duty-vs-power `modalityBreakdown`.
+
+The dataset is a research extract: each row carries the date it was captured (`extractedAsOf`) and reflects the legislation as it stood then, not necessarily current law.
+
 ### Resources
 
 The server provides documentation resources grouped by namespace:
@@ -29,7 +39,7 @@ The server provides documentation resources grouped by namespace:
 - `advanced://query-syntax` - Query syntax for `search_legislation_advanced` / `count_legislation_advanced`
 - `text://format-guide` - Plain-text output format reference
 - `json://` - Response shape references for the JSON-returning tools (`search-response`, `advanced-search-response`, `metadata-response`, `table-of-contents-response`, `semantic-search-response`, `semantic-section-response`)
-- `cookbook://` - Task-oriented recipes: `check-extent`, `check-outstanding-effects`, `point-in-time-version`, `search-effects`, `find-recent-si-by-subject`, `semantic-search-workflow`
+- `cookbook://` - Task-oriented recipes: `index` (list of all recipes), `check-extent`, `check-outstanding-effects`, `point-in-time-version`, `search-effects`, `find-recent-si-by-subject`, `semantic-search-workflow`
 - `years://regnal` - Regnal-year identifiers for pre-1963 Acts
 
 ## Installation
@@ -67,6 +77,19 @@ If Research API credentials are not configured, the `search_legislation_advanced
   - Example: `sk-xxx...`
 
 If semantic search is not configured, the semantic tools will fail with connection errors. The standard legislation.gov.uk tools work independently of semantic search configuration.
+
+#### Powers and Duties Database (Optional)
+
+The powers-and-duties tools are backed by an Aurora Serverless v2 Postgres cluster reached over the RDS Data API. Unlike the Research API and semantic tools — which are always advertised and fail at call time when unconfigured — these three tools are **not registered at all** unless the cluster wiring is present. If `DUTIES_DB_CLUSTER_ARN` or `DUTIES_DB_SECRET_ARN` is missing, the server logs `Postgres duties backend disabled` at startup and `search_powers_and_duties`, `count_powers_and_duties`, and `get_powers_and_duties` are absent from the tool list. All other tools are unaffected.
+
+- **`DUTIES_DB_CLUSTER_ARN`** - ARN of the Aurora cluster (required)
+- **`DUTIES_DB_SECRET_ARN`** - ARN of the Secrets Manager secret holding the database credentials (required)
+- **`DUTIES_DB_NAME`** - Database name
+  - Default: `duties`
+- **`AWS_REGION`** - AWS region for the Data API client
+  - Default: `eu-west-2`
+
+Standard AWS credentials must also be available to the process (via the usual credential chain — environment variables, shared config, or an instance/task role).
 
 #### Transport Mode
 
@@ -154,9 +177,28 @@ npm run generate-manifest
 
 # Run tests
 npm test
+
+# Type-check (run before committing)
+npm run check
 ```
 
+### Test harness
+
+`mcp-harness.mjs` at the repo root drives a running server over HTTP the way a real MCP client does — useful for exercising a tool end-to-end without the Inspector UI. Start the server with `MCP_TRANSPORT=http npm start`, then:
+
+```bash
+# List the tools the server currently advertises
+node mcp-harness.mjs --list
+
+# Call a tool with JSON arguments
+node mcp-harness.mjs search_powers_and_duties '{"query":"local authority","modality":"duty"}'
+```
+
+Set `MCP_URL` to point at a different endpoint (default `http://localhost:3000/mcp`).
+
 ## Architecture
+
+### Resources
 
 The server uses a convention-based resource system:
 
@@ -164,6 +206,14 @@ The server uses a convention-based resource system:
 - Top-level directories become URI namespaces (e.g., `clml://`, `guide://`)
 - Build process generates a manifest mapping URIs to files
 - Resources are loaded on-demand at runtime
+
+### Data backends
+
+Most tools proxy the public legislation.gov.uk APIs (`src/api/legislation-client.ts`), with the advanced-search tools going to the Research API and the semantic tools to the Lex vector service.
+
+The powers-and-duties tools are different: they read a research dataset held in an **Aurora Serverless v2 Postgres** cluster, queried over the **RDS Data API** (`src/api/duties-db-pg.ts`). The Data API is HTTPS-stateless, so there is no connection pool to manage and no shutdown step. The tool layer depends only on the `DutiesDbApi` interface in `src/api/duties-types.ts`.
+
+`openDutiesPg()` returns `null` when the cluster environment variables are absent, which disables the duties tools rather than failing startup — so local development without AWS wiring works normally. This was previously a SQLite file; that backend was removed once Postgres was confirmed in production (see `docs/adr/2026-05-29-postgres-migration-plan.md`).
 
 ## License
 
