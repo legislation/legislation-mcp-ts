@@ -15,9 +15,16 @@ Results include: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, and \`date\`
 
 \`subject\` only applies to SI-family types (uksi, ssi, wsi, nisr, etc.); Acts don't carry subject metadata. If \`subject\` is set without a \`type\`, \`secondary\` is used by default.
 
-For full-text search with snippets, proximity queries, element-scoped matching (e.g. search within titles, chapters, paragraphs), or counting matches, use \`search_legislation_advanced\`.
-
 See: \`types://guide\`, \`json://search-response\`, \`atom://feed-guide\``;
+
+/**
+ * Appended to `description` by buildToolList(), but only when the Research API
+ * is configured. It names `search_legislation_advanced`, which is not
+ * registered without that backend — recommending it unconditionally would
+ * steer the model at a tool the server does not advertise, which is the very
+ * failure this gating exists to prevent.
+ */
+export const researchRecommendation = `For full-text search with snippets, proximity queries, element-scoped matching (e.g. search within titles, chapters, paragraphs), or counting matches, use \`search_legislation_advanced\`.`;
 
 export const inputSchema = {
   type: "object",

@@ -164,3 +164,20 @@ export class LexClient {
     }
   }
 }
+
+/**
+ * Returns a LexClient only when the semantic backend is configured.
+ *
+ * Mirrors openDutiesPg(): presence of the env var is what enables the semantic
+ * tools, so an install with no Lex backend does not advertise tools whose only
+ * possible outcome is a connection error. SEMANTIC_API_BASE_URL is set in every
+ * supported deployment — McpStack wires it from the Lex service URL, and the
+ * documented local setup sets it explicitly — so the constructor's
+ * localhost:8000 default now only applies to a directly constructed client.
+ */
+export function openLexClient(): LexClient | null {
+  if (!process.env.SEMANTIC_API_BASE_URL) {
+    return null;
+  }
+  return new LexClient();
+}

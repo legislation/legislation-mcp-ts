@@ -4,6 +4,49 @@ Solutions to common errors and edge cases when working with UK legislation data.
 
 ## Connection and Configuration Errors
 
+### A semantic, advanced or duties tool is missing from the tool list
+
+**Symptom:** the tool never appears among those the server offers. If your
+client is working from a tool list it cached earlier, calling it returns:
+
+```
+Error executing tool: Semantic search is not configured on this server
+(SEMANTIC_API_BASE_URL is unset) ...
+```
+
+**Cause:** these tools are registered only when their backend is configured. A
+server without that configuration does not advertise them at all, rather than
+advertising them and failing at call time.
+
+| Missing tool | Required variables |
+|---|---|
+| `search_legislation_semantic`, `search_legislation_sections_semantic` | `SEMANTIC_API_BASE_URL` |
+| `search_legislation_advanced`, `count_legislation_advanced` | `RESEARCH_API_USERNAME` **and** `RESEARCH_API_PASSWORD` |
+| `search_powers_and_duties`, `count_powers_and_duties`, `get_powers_and_duties` | `DUTIES_DB_CLUSTER_ARN` **and** `DUTIES_DB_SECRET_ARN` |
+
+**Solutions:**
+
+1. **Check what the server sees.** It reports every backend at startup on
+   stderr:
+   ```
+   [init] Semantic search backend: disabled (needs SEMANTIC_API_BASE_URL)
+   [init] Research API backend: disabled (needs RESEARCH_API_USERNAME + RESEARCH_API_PASSWORD)
+   [init] Duties backend: disabled (needs DUTIES_DB_CLUSTER_ARN + DUTIES_DB_SECRET_ARN)
+   ```
+
+2. **Set every variable the backend requires**, then **restart the server** —
+   configuration is read once, at startup. Where two variables are listed, one
+   alone leaves the tools unregistered.
+
+3. **Reconnect the client.** MCP clients cache the tool list from when they
+   connected, so newly registered tools stay invisible until the client
+   reconnects (Claude Desktop needs a full restart).
+
+4. **Or use `search_legislation`**, which needs no configuration and covers
+   keyword and metadata search on every install.
+
+---
+
 ### Error: "Failed to fetch" (Semantic Search)
 
 **Symptoms:**
@@ -11,27 +54,23 @@ Solutions to common errors and edge cases when working with UK legislation data.
 Error searching legislation (semantic): Failed to fetch http://localhost:8000/legislation/search: ...
 ```
 
-**Cause:** Semantic search API is not configured or not running.
+**Cause:** The semantic search API is configured but unreachable. A server with
+no `SEMANTIC_API_BASE_URL` at all does not offer the semantic tools in the first
+place, so seeing them in the tool list means the backend is configured — the URL
+is wrong, or the service is down.
 
 **Solutions:**
 
-1. **Check if semantic API is required:**
-   - Semantic search tools are optional
-   - Standard tools (`search_legislation`, `get_legislation`, `get_legislation_metadata`) work independently
-
-2. **Configure semantic API:**
-   ```bash
-   export SEMANTIC_API_BASE_URL=http://localhost:8000
-   export SEMANTIC_API_KEY=your-key-here  # if required
-   npm start
-   ```
-
-3. **Verify API is running:**
+1. **Verify the API is running:**
    ```bash
    curl http://localhost:8000/health  # or your API endpoint
    ```
 
-4. **Use standard search instead:**
+2. **Check the configured base URL** matches where the service is actually
+   listening. The server logs it at startup as
+   `[init] Semantic search backend: <url>`.
+
+3. **Use standard search instead:**
    - `search_legislation` for keyword search
    - `get_legislation` for full documents
 

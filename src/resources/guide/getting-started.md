@@ -16,6 +16,10 @@ This MCP server provides tools and resources for working with UK legislation fro
 
 **Standard search** is live from legislation.gov.uk. **Semantic search** may lag days/weeks behind live data — verify important results with `search_legislation`.
 
+The semantic and advanced tools depend on optional backends and are only offered
+by servers configured for them. If one is missing from your tool list, this
+server does not have that backend — use `search_legislation` instead.
+
 ### Retrieval Tools
 
 | Use Case | Tool |

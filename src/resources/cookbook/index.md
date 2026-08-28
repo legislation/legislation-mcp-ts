@@ -91,7 +91,7 @@ Find which legislation a given Act amends, or which Acts amend a given piece of 
 ### `cookbook://semantic-search-workflow`
 **Semantic Search Workflow (Experimental)**
 
-Use semantic search to find relevant legislation by concept, then verify and retrieve full documents.
+Use semantic search to find relevant legislation by concept, then verify and retrieve full documents. Requires the semantic search backend — the tools it uses are advertised only when that backend is configured.
 
 **What you'll learn:**
 - When to use semantic vs standard search

@@ -16,7 +16,7 @@ Available resources:
 - \`cookbook://index\` — Index of all cookbook recipes
 - \`cookbook://check-extent\` — How to check geographical extent
 - \`cookbook://point-in-time-version\` — How to retrieve historical versions
-- \`cookbook://semantic-search-workflow\` — Semantic search step-by-step
+- \`cookbook://semantic-search-workflow\` — Semantic search step-by-step (needs the semantic search backend)
 - \`types://guide\` — All UK legislation type codes (\`ukpga\`, \`uksi\`, etc.)
 - \`types://data\` — Type codes as JSON
 - \`years://regnal\` — Regnal year identifiers for pre-1963 legislation

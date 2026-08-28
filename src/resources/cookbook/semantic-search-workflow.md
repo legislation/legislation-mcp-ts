@@ -1,6 +1,6 @@
 # Semantic Search Workflow
 
-Step-by-step guide for using semantic search to find relevant legislation.
+**Requires the semantic search backend.** Step-by-step guide for using semantic search to find relevant legislation. The recipe below calls `search_legislation_semantic` and `search_legislation_sections_semantic`, which are advertised only when that backend is configured — if they are not in your tool list, use `search_legislation` instead.
 
 ## When to Use Semantic Search
 

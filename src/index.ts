@@ -17,7 +17,7 @@
 // No-op in production — App Runner injects env vars and ships no .env file.
 import "dotenv/config";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createServer, getResourceLoader } from "./server.js";
+import { createServer, getResourceLoader, getToolNames } from "./server.js";
 import { startHttpServer } from "./transports/http.js";
 
 /**
@@ -31,10 +31,12 @@ async function startStdioServer(): Promise<void> {
   // Log to stderr (stdout is used for MCP communication)
   const resourceLoader = getResourceLoader();
   console.error("UK Legislation MCP Server (stdio mode)");
-  console.error("Tools: search_legislation, get_legislation_metadata, get_legislation,");
-  console.error("       get_legislation_fragment, get_legislation_table_of_contents,");
-  console.error("       search_legislation_semantic, search_legislation_sections_semantic,");
-  console.error("       search_effects, get_resource");
+  // Listed from the server's own tool list, so the banner reflects which
+  // optional backends are configured rather than a hardcoded roster.
+  console.error("Tools:");
+  for (const tool of getToolNames()) {
+    console.error(`  - ${tool}`);
+  }
   console.error("Resources loaded:");
   for (const resource of resourceLoader.listResources()) {
     console.error(`  - ${resource.uri}`);

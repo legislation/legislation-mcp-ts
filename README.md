@@ -7,20 +7,33 @@ Model Context Protocol (MCP) server providing AI assistants with access to UK le
 ### Tools
 
 - **search_legislation** - Search by keyword (`q`), title, or metadata filters: `type` (single or multi-value, including aggregates like `primary`/`secondary`), `year`/`startYear`/`endYear`, `subject`, `department`, `extent` (E/W/S/NI), and `language` (english/welsh). Order results with `sort` (relevance, published, title, type, subject, basic). Returns 20 results per page with pagination support (`page` parameter, `meta.morePages` flag).
-- **search_legislation_advanced** - Advanced structured search over legislation XML via the Research API. Supports proximity queries, element-scoped matching (titles, chapters, paragraphs, footnotes), boolean logic, range queries, and counting. Takes a `query` string in the advanced query syntax (see `advanced://query-syntax`).
-- **count_legislation_advanced** - Count documents or document features (paragraphs, schedules, footnotes, etc.) using the advanced query syntax, with optional grouping by department, subject, year, etc.
+- **search_legislation_advanced** *(needs the Research API)* - Advanced structured search over legislation XML via the Research API. Supports proximity queries, element-scoped matching (titles, chapters, paragraphs, footnotes), boolean logic, range queries, and counting. Takes a `query` string in the advanced query syntax (see `advanced://query-syntax`).
+- **count_legislation_advanced** *(needs the Research API)* - Count documents or document features (paragraphs, schedules, footnotes, etc.) using the advanced query syntax, with optional grouping by department, subject, year, etc.
 - **get_legislation** - Retrieve full legislation documents. Default format is plain text; also supports XML (CLML), Akoma Ntoso, and HTML. Plain-text responses include an up-to-date callout listing any unapplied effects.
 - **get_legislation_metadata** - Get structured JSON metadata for a document or a specific fragment (e.g. `section/12`, `part/2/chapter/1`). Returns status, extent, key dates, available versions, and unapplied effects. Supports point-in-time versions and Welsh-language metadata for bilingual legislation.
 - **get_legislation_fragment** - Retrieve a specific fragment (section, part, etc.) of a legislation document. Default format is plain text.
 - **get_legislation_table_of_contents** - Retrieve the table of contents for a piece of legislation. Default format is structured JSON.
 - **search_effects** - Search legislative effects (amendments, repeals, insertions) by source (affecting) and/or target (affected) legislation. Filter by `applied` status to find unapplied amendments.
-- **search_legislation_semantic** - Semantic search across legislation using vector index (experimental)
-- **search_legislation_sections_semantic** - Semantic search across individual sections (experimental)
+- **search_legislation_semantic** *(needs the semantic search backend)* - Semantic search across legislation using vector index (experimental)
+- **search_legislation_sections_semantic** *(needs the semantic search backend)* - Semantic search across individual sections (experimental)
 - **get_resource** - Fetch an MCP resource by URI. Intended for API-connected agents that support tool calls but cannot access MCP resources directly; not needed for local MCP clients.
+
+Tools marked *(needs ...)* are **registered only when their backend is
+configured** — they are absent from the tool list otherwise, rather than being
+advertised and failing when called. An install with none of the optional
+backends offers the seven unmarked tools above; setting the relevant environment
+variables and restarting brings the others back. The server logs which backends
+are active at startup:
+
+```
+[init] Semantic search backend: disabled (needs SEMANTIC_API_BASE_URL)
+[init] Research API backend: https://research.legislation.gov.uk
+[init] Duties backend: disabled (needs DUTIES_DB_CLUSTER_ARN + DUTIES_DB_SECRET_ARN)
+```
 
 #### Powers and Duties
 
-These three tools are **registered only when the duties Postgres backend is configured** (see [Powers and Duties Database](#powers-and-duties-database-optional) below). Without that configuration the server logs `Postgres duties backend disabled` at startup and the tools do not appear in the tool list.
+These three tools are **registered only when the duties Postgres backend is configured** (see [Powers and Duties Database](#powers-and-duties-database-optional) below).
 
 - **search_powers_and_duties** - Search The National Archives' powers-and-duties research dataset. Each row identifies a power or duty granted to or imposed on an actor by a specific provision of UK legislation, with the action expressed in plain English. Free-text `query` supports implicit AND, `"quoted phrases"`, `OR` between terms, and `-` negation; combine with filters for `enactment_type`, year range, `actor`, `modality` (duty/power), `priority` (primary/secondary), and `inference` (explicit/implicit).
 - **count_powers_and_duties** - Count rows in the dataset, optionally grouped by one dimension (`enactment_type`, `enactment_year`, `actor`, `modality`, `priority`, `inference`, or `enactment_uri`). Grouped results are top-N by count, with a `groupsTruncated` flag.
@@ -59,7 +72,7 @@ The server can be configured using environment variables:
 
 #### Research API (Optional)
 
-If Research API credentials are not configured, the `search_legislation_advanced` and `count_legislation_advanced` tools will fail with authentication errors. The standard legislation.gov.uk tools work independently of Research API configuration.
+`search_legislation_advanced` and `count_legislation_advanced` are registered only when **both** `RESEARCH_API_USERNAME` and `RESEARCH_API_PASSWORD` are set; without them the tools are not offered to the client (every request would be a 401). The standard legislation.gov.uk tools work independently of Research API configuration.
 
 - **`RESEARCH_API_BASE_URL`** - Base URL for the Research API
   - Default: `https://research.legislation.gov.uk`
@@ -76,11 +89,13 @@ If Research API credentials are not configured, the `search_legislation_advanced
   - Default: None
   - Example: `sk-xxx...`
 
-If semantic search is not configured, the semantic tools will fail with connection errors. The standard legislation.gov.uk tools work independently of semantic search configuration.
+`search_legislation_semantic` and `search_legislation_sections_semantic` are registered only when `SEMANTIC_API_BASE_URL` is set; without it the tools are not offered to the client. Set it explicitly even when the backend is at the default address — the default applies to the client, not to whether the tools are registered. The standard legislation.gov.uk tools work independently of semantic search configuration.
+
+> **Upgrading:** `SEMANTIC_API_BASE_URL` used to be optional — the client fell back to `http://localhost:8000`, so a server with the variable unset still offered the semantic tools and reached a Lex instance running at that address. It now gates registration, so an install that relied on the implicit default loses the semantic tools with no error beyond one `[init]` line on stderr. If that describes yours, set `SEMANTIC_API_BASE_URL=http://localhost:8000` explicitly and restart.
 
 #### Powers and Duties Database (Optional)
 
-The powers-and-duties tools are backed by an Aurora Serverless v2 Postgres cluster reached over the RDS Data API. Unlike the Research API and semantic tools — which are always advertised and fail at call time when unconfigured — these three tools are **not registered at all** unless the cluster wiring is present. If `DUTIES_DB_CLUSTER_ARN` or `DUTIES_DB_SECRET_ARN` is missing, the server logs `Postgres duties backend disabled` at startup and `search_powers_and_duties`, `count_powers_and_duties`, and `get_powers_and_duties` are absent from the tool list. All other tools are unaffected.
+The powers-and-duties tools are backed by an Aurora Serverless v2 Postgres cluster reached over the RDS Data API. Like the Research API and semantic tools, they are registered only when their backend is configured. If `DUTIES_DB_CLUSTER_ARN` or `DUTIES_DB_SECRET_ARN` is missing, the server logs `[init] Duties backend: disabled (needs DUTIES_DB_CLUSTER_ARN + DUTIES_DB_SECRET_ARN)` at startup and `search_powers_and_duties`, `count_powers_and_duties`, and `get_powers_and_duties` are absent from the tool list. All other tools are unaffected.
 
 - **`DUTIES_DB_CLUSTER_ARN`** - ARN of the Aurora cluster (required)
 - **`DUTIES_DB_SECRET_ARN`** - ARN of the Secrets Manager secret holding the database credentials (required)

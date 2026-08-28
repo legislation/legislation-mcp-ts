@@ -220,3 +220,17 @@ export class ResearchClient {
     return (await response.json()) as T;
   }
 }
+
+/**
+ * Returns a ResearchClient only when Research API credentials are configured.
+ *
+ * Mirrors openDutiesPg(): without Basic-auth credentials every request 401s,
+ * so the advanced tools are not registered rather than being advertised and
+ * failing on call. The base URL has a working default and so does not gate.
+ */
+export function openResearchClient(): ResearchClient | null {
+  if (!process.env.RESEARCH_API_USERNAME || !process.env.RESEARCH_API_PASSWORD) {
+    return null;
+  }
+  return new ResearchClient();
+}

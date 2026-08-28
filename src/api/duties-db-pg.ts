@@ -217,10 +217,9 @@ export function openDutiesPg(): DutiesDbPg | null {
   const databaseName = process.env.DUTIES_DB_NAME ?? "duties";
   const region = process.env.AWS_REGION ?? "eu-west-2";
 
+  // Caller (server.ts) logs the disabled state alongside the other optional
+  // backends, so this stays quiet.
   if (!clusterArn || !secretArn) {
-    console.warn(
-      "[init] DUTIES_DB_CLUSTER_ARN / DUTIES_DB_SECRET_ARN not set — Postgres duties backend disabled",
-    );
     return null;
   }
   return new DutiesDbPg({ clusterArn, secretArn, databaseName, region });
