@@ -63,7 +63,7 @@ A single Aurora Serverless v2 (Postgres-compatible) cluster in `eu-west-2`, conf
 - **Maximum capacity: ~2 ACU** for headroom.
 - **Data API enabled** — HTTPS access via `rds-data.eu-west-2.amazonaws.com`, no VPC required.
 - **Single-AZ.** The dataset is reproducible from the CSV source, so backup/failover concerns are lighter than for a system of record.
-- **IAM database authentication.** The MCP App Runner instance role gets `rds-data:ExecuteStatement` (and related actions) scoped to this cluster's ARN. No DB password to manage, no Secrets Manager rotation to wire up.
+- **~~IAM database authentication.~~ IAM-authorised Data API.** The MCP App Runner instance role gets `rds-data:ExecuteStatement` ~~(and related actions)~~ scoped to this cluster's ARN. ~~No DB password to manage, no Secrets Manager rotation to wire up.~~ **Corrected 2026-09-24:** this is not RDS IAM database authentication. The IAM grant authorises the Data API call; the Data API then logs in to Postgres with a `{username, password}` read from the Secrets Manager secret named on every request. There is a database password — Secrets Manager generates and holds it — and rotating it is a manual step, covered in the infra copy of this ADR.
 
 No VPC, no NAT Gateway, no App Runner VPC Connector. App Runner stays on `egressType: 'DEFAULT'` and reaches the cluster over HTTPS to the AWS API plane, exactly the way it already reaches every other AWS service.
 
@@ -117,6 +117,8 @@ Done as a single reversible commit, after Phase 4 was confirmed in production (p
 - Stale references swept (`.env.example`, `src/index.ts` comment, `ingest-duties-pg.js` comment).
 
 Note: the local `data/duties.db` file is left on disk (it is gitignored, so not part of the commit) as a convenience; it is no longer referenced by any code path.
+
+**Infra follow-up (2026-08-25).** The stack side has caught up with this phase. `DUTIES_DB_BACKEND` was still being set by `McpStack` for a server that had stopped reading it, and `sqlite` was still an accepted value — which passed both cluster ARNs to the runtime while withholding the Data API IAM grant, so the duties tools would have been advertised and then failed `AccessDenied` on every call. The selector is now gone from `bin/app.ts`, `McpStack`, and `.env.example`, and the stack rejects a half-configured cluster at synth. At the same time the runtime stopped receiving the cluster's master credentials: it authenticates as a dedicated read-only role (`mcp_ro`) provisioned by `scripts/apply-readonly-role.js`. Details in the infra copy of this ADR under *Database credentials*.
 
 **Still open (deliberately deferred, not blockers):**
 - The `idx_duties_actor_aliases` GIN index (`jsonb_path_ops`) only accelerates `@>` containment queries, but the actor filter runs `jsonb_array_elements` + `ILIKE` (case-insensitive substring, which `@>` cannot do). So the index is unused by any query path. Decide whether to drop it or add an exact-match alias path that uses it. Touching it means a live Aurora DDL change, so it is left for the pg_trgm/indexing follow-up rather than this code-only commit. Harmless to leave: the actor filter is normally combined with btree-indexed filters (modality, type, year) that narrow the row set first.
@@ -247,7 +249,7 @@ Reading the existing CDK project at `../infra/` confirmed:
 These findings drove two changes from earlier drafts:
 
 1. Originally Phase 1 would have **introduced a VPC** with private subnets, an RDS instance, an App Runner VPC Connector, and (once we realised the MCP makes outbound calls to public APIs like `research.legislation.gov.uk`) a NAT Gateway. Total cost would have risen to ~$60/mo, and the project would have acquired a VPC it has to start reasoning about. We changed the target architecture instead — see [Why this target](#why-this-target) — to **Aurora Serverless v2 + Data API**, which needs no VPC at all.
-2. The "Secrets Manager vs IAM" open question collapsed: Aurora Data API authenticates via IAM directly, with no DB password to store or rotate.
+2. The "Secrets Manager vs IAM" open question ~~collapsed: Aurora Data API authenticates via IAM directly, with no DB password to store or rotate.~~ **Corrected 2026-09-24:** did not collapse — the answer is both. IAM authorises each Data API call, and the Data API authenticates to Postgres with a Secrets Manager secret, so there has been a database password from the start.
 
 ## Open questions before Phase 1 (resolved)
 
