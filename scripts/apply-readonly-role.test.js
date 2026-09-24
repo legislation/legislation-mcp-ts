@@ -60,6 +60,13 @@ function harness({ roSecret = { username: "mcp_ro", password: "pw" }, whoami = "
 
   const execute = async (secretArn, sql) => {
     events.push({ kind: "sql", secretArn, sql });
+    // As Postgres does: a non-superuser may not ALTER a SUPERUSER role at all.
+    if (exists && A.super && /^ALTER ROLE/.test(sql)) {
+      throw new Error("permission denied to alter role");
+    }
+    if (sql.startsWith("SELECT rolsuper FROM pg_roles")) {
+      return { records: exists ? [[bool(A.super)]] : [] };
+    }
     if (sql.includes("rolsuper")) {
       return {
         records: [[bool(A.super), bool(A.createdb), bool(A.createrole), bool(A.login),
@@ -73,7 +80,6 @@ function harness({ roSecret = { username: "mcp_ro", password: "pw" }, whoami = "
       return { records: [[{ stringValue: roSecret.username }, bool(false), { longValue: 1 }]] };
     }
     if (sql === "SELECT current_user AS whoami") return { records: [[{ stringValue: whoami }]] };
-    if (sql.includes("SELECT 1 FROM pg_roles")) return { records: exists ? [[{ longValue: 1 }]] : [] };
     return { records: [] };
   };
 
@@ -187,12 +193,28 @@ test("database privileges are revoked before CONNECT is granted", () => {
   assert.ok(revoke < grant, "the revoke must precede the grant, or it undoes it");
 });
 
-test("a SUPERUSER role is reported with no local remedy", async () => {
-  // Neither alterable nor droppable by a non-superuser, so offering the
-  // drop-and-recreate sequence here would send the operator down a dead end.
+test("an existing SUPERUSER role is refused before any mutation", async () => {
+  // The harness rejects ALTER ROLE on it, as Postgres does, so without the
+  // preflight this fails on that error instead. Neither alterable nor droppable
+  // by a non-superuser, so offering the drop-and-recreate sequence here would
+  // send the operator down a dead end.
+  const { deps, statements } = harness({ exists: true, attrs: { super: true } });
+  await assert.rejects(() => provision(deps), err => {
+    assert.ok(err instanceof ProvisionError);
+    assert.match(err.message, /already exists and is SUPERUSER/);
+    assert.match(err.message, /AWS support/);
+    assert.doesNotMatch(err.message, /DROP ROLE/);
+    return true;
+  });
+  assert.equal(statements().filter(s => MUTATING.test(s.sql)).length, 0);
+});
+
+test("the catalog check still gives SUPERUSER no drop remedy", async () => {
+  // Backstop for SUPERUSER appearing after the preflight. A fake can reach this
+  // branch; Postgres should not.
   const { deps } = harness({ attrs: { super: true } });
   await assert.rejects(() => provision(deps), err => {
-    assert.match(err.message, /is SUPERUSER/);
+    assert.match(err.message, /Verification failed — mcp_ro is SUPERUSER/);
     assert.match(err.message, /AWS support/);
     assert.doesNotMatch(err.message, /DROP ROLE/);
     return true;

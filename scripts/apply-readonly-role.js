@@ -128,9 +128,11 @@ export const CREATE_ATTRIBUTES =
  * exists for. CREATE is exempt: there Postgres checks only when an attribute is
  * being turned ON.
  *
- * Dropping them costs nothing in practice. verifyCatalog checks all three on
- * every run and fails loudly, so drift is detected either way; and only a
- * superuser could have introduced it, so only a superuser could repair it.
+ * Dropping them costs nothing in practice, because drift is still caught on every
+ * run. An existing SUPERUSER role is refused before the ALTER, since Postgres
+ * rejects any ALTER of one by a non-superuser, even a bare password change; and
+ * verifyCatalog checks all three after it. Only a superuser could have introduced
+ * that drift, so only a superuser could repair it.
  */
 export const ALTER_ATTRIBUTES = "LOGIN NOCREATEDB NOCREATEROLE";
 
@@ -377,7 +379,7 @@ export async function provision({ config, execute, getSecret, log = console.log 
   log(`Readable: ${READABLE_TABLES.join(", ")}`);
   log("");
 
-  // Identity guard — the first database operation, before roleExists() and
+  // Identity guard — the first database operation, before existingRole() and
   // before any DDL. Everything below runs as whoever DUTIES_DB_SECRET_ARN
   // names; if that is not the owner, the grants would be made by the wrong
   // grantor (or fail halfway through), so this refuses before changing
@@ -391,7 +393,20 @@ export async function provision({ config, execute, getSecret, log = console.log 
   log(`Authenticated as ${whoami}.`);
   log("");
 
-  const exists = await roleExists(asMaster, username);
+  const existing = await existingRole(asMaster, username);
+
+  // SUPERUSER preflight. Postgres will not let a non-superuser alter a SUPERUSER
+  // role at all, so the ALTER below would fail on Postgres's own error before
+  // verifyCatalog could explain it. Refuse here instead, before any mutation.
+  if (existing?.superuser) {
+    fail(
+      `Refusing to provision: ${username} already exists and is SUPERUSER. ` +
+        `Postgres lets no non-superuser alter such a role, not even its password, ` +
+        `so nothing has been changed.` +
+        superuserOnlyAdvice([["is SUPERUSER", "NOSUPERUSER"]], { roleIdent, dbIdent })
+    );
+  }
+  const exists = existing !== null;
 
   for (const { sql, label } of buildStatements({
     roleIdent,
@@ -465,11 +480,13 @@ async function readRoleSecret(getSecret, arn) {
   return { username, password };
 }
 
-async function roleExists(asMaster, name) {
-  const res = await asMaster("SELECT 1 FROM pg_roles WHERE rolname = :name", [
+/** null if the role does not exist; otherwise whether it is SUPERUSER. */
+async function existingRole(asMaster, name) {
+  const res = await asMaster("SELECT rolsuper FROM pg_roles WHERE rolname = :name", [
     { name: "name", value: { stringValue: name } },
   ]);
-  return (res.records ?? []).length > 0;
+  const row = res.records?.[0];
+  return row ? { superuser: row[0].booleanValue === true } : null;
 }
 
 /**
@@ -522,46 +539,58 @@ async function verifyCatalog(asMaster, { name, roleIdent, dbIdent }, log) {
 
   const all = [...superuserOnly.map(([desc]) => desc), ...problems];
   if (all.length > 0) {
+    // SUPERUSER is normally refused by the preflight in provision(); this branch
+    // is the backstop should it appear after that.
     let message = `Verification failed — ${name} ${all.join("; ")}.`;
     if (superuserOnly.length > 0) {
-      message +=
-        `\nThis script cannot clear ${superuserOnly.length === 1 ? "that" : "those"}: ` +
-        `only a true Postgres superuser may set ${superuserOnly.length === 1 ? "it" : "them"}, ` +
-        `and no Aurora principal is one — rds_superuser is a role membership, not ` +
-        `the attribute. On a stock Aurora cluster this state should be unreachable, ` +
-        `since setting these takes the same privilege as clearing them.`;
-      if (superuserOnly.some(([, fix]) => fix === "NOSUPERUSER")) {
-        // A SUPERUSER role can be neither altered nor dropped by a non-superuser,
-        // so there is no local remedy at all — verified against postgres:16.
-        message +=
-          `\nA SUPERUSER role can be neither altered nor dropped from here. Do not ` +
-          `deploy the MCP stack; raise this with AWS support.`;
-      } else {
-        // REPLICATION and BYPASSRLS roles *can* be dropped by the master, so
-        // recreating is a real remedy. The REVOKEs are required: DROP ROLE
-        // refuses while the role holds privileges, and DROP OWNED BY is refused
-        // to a non-member of the role. Both verified against postgres:16.
-        //
-        // Quoted identifiers, not bare names: isPlainIdentifier permits upper
-        // case, and an unquoted `DROP ROLE Mcp_Ro` folds to `mcp_ro` — a role
-        // this script never created, and possibly one it did not mean to drop.
-        message +=
-          `\nRecreate the role instead. As the master user:\n` +
-          `  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${roleIdent};\n` +
-          `  REVOKE ALL ON SCHEMA public FROM ${roleIdent};\n` +
-          `  REVOKE ALL ON DATABASE ${dbIdent} FROM ${roleIdent};\n` +
-          `  DROP ROLE ${roleIdent};\n` +
-          `then re-run this script — the CREATE branch sets every attribute. The ` +
-          `REVOKEs are not optional: DROP ROLE refuses while the role holds ` +
-          `privileges, and DROP OWNED BY is refused to a non-member. If DROP ROLE ` +
-          `still fails after them, the role holds something granted by another ` +
-          `grantor or in another schema, which this script never sees; the error's ` +
-          `DETAIL lines name it.`;
-      }
+      message += superuserOnlyAdvice(superuserOnly, { roleIdent, dbIdent });
     }
     fail(message);
   }
   log(`Verified (catalog): ${name} holds exactly ${expected.join(", ")}.`);
+}
+
+/**
+ * Why SUPERUSER, REPLICATION or BYPASSRLS cannot be cleared from here, and what
+ * to do instead. `found` holds [description, NO-form] pairs for the ones set.
+ * Shared by the SUPERUSER preflight in provision() and by verifyCatalog.
+ */
+function superuserOnlyAdvice(found, { roleIdent, dbIdent }) {
+  let message =
+    `\nThis script cannot clear ${found.length === 1 ? "that" : "those"}: ` +
+    `only a true Postgres superuser may set ${found.length === 1 ? "it" : "them"}, ` +
+    `and no Aurora principal is one — rds_superuser is a role membership, not ` +
+    `the attribute. On a stock Aurora cluster this state should be unreachable, ` +
+    `since setting these takes the same privilege as clearing them.`;
+  if (found.some(([, fix]) => fix === "NOSUPERUSER")) {
+    // A SUPERUSER role can be neither altered nor dropped by a non-superuser,
+    // so there is no local remedy at all — verified against postgres:16.
+    message +=
+      `\nA SUPERUSER role can be neither altered nor dropped from here. Do not ` +
+      `deploy the MCP stack; raise this with AWS support.`;
+  } else {
+    // REPLICATION and BYPASSRLS roles *can* be dropped by the master, so
+    // recreating is a real remedy. The REVOKEs are required: DROP ROLE
+    // refuses while the role holds privileges, and DROP OWNED BY is refused
+    // to a non-member of the role. Both verified against postgres:16.
+    //
+    // Quoted identifiers, not bare names: isPlainIdentifier permits upper
+    // case, and an unquoted `DROP ROLE Mcp_Ro` folds to `mcp_ro` — a role
+    // this script never created, and possibly one it did not mean to drop.
+    message +=
+      `\nRecreate the role instead. As the master user:\n` +
+      `  REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${roleIdent};\n` +
+      `  REVOKE ALL ON SCHEMA public FROM ${roleIdent};\n` +
+      `  REVOKE ALL ON DATABASE ${dbIdent} FROM ${roleIdent};\n` +
+      `  DROP ROLE ${roleIdent};\n` +
+      `then re-run this script — the CREATE branch sets every attribute. The ` +
+      `REVOKEs are not optional: DROP ROLE refuses while the role holds ` +
+      `privileges, and DROP OWNED BY is refused to a non-member. If DROP ROLE ` +
+      `still fails after them, the role holds something granted by another ` +
+      `grantor or in another schema, which this script never sees; the error's ` +
+      `DETAIL lines name it.`;
+  }
+  return message;
 }
 
 /**
