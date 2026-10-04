@@ -106,6 +106,10 @@ The powers-and-duties tools are backed by an Aurora Serverless v2 Postgres clust
 
 Standard AWS credentials must also be available to the process (via the usual credential chain — environment variables, shared config, or an instance/task role).
 
+In production `DUTIES_DB_SECRET_ARN` is the **read-only** role's secret (`mcp_ro`), not the cluster's master credentials — the App Runner instance role can read that one secret and holds a single Data API action, `rds-data:ExecuteStatement`. The master secret is operator-only, for the schema, ingest and role-provisioning scripts. Locally you can point at either; the read-only one is the closer mirror of production. See `infra/docs/adr/2026-05-29-postgres-migration-plan.md`.
+
+The `mcp_ro` role is created by `scripts/apply-readonly-role.js`, not by deploying — a freshly provisioned cluster needs it run once, and again after any rotation of the read-only secret or any change to the set of tables the role may read (`READABLE_TABLES` in that script). Ordinary schema changes and re-ingests do not need it: the grants are table-scoped and the duties ingest `TRUNCATE`s rather than replacing the table. The script finishes by authenticating as `mcp_ro` and reading `duties` for real, so a password mismatch between the secret and the role fails there rather than after deploy. Before touching the database at all, it refuses a read-only secret whose username is the master, or anything other than the configured read-only role (`mcp_ro`, overridable with `DUTIES_DB_RO_USERNAME`) — so pointing `DUTIES_DB_RO_SECRET_ARN` at the wrong secret stops the run instead of resetting some other role's password.
+
 #### Transport Mode
 
 - **`MCP_TRANSPORT`** - Communication transport (stdio or http)
