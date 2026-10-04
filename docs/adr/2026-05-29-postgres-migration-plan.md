@@ -1,7 +1,7 @@
 # Postgres Migration Plan (Sequencing Ahead of App Runner Sunset)
 
 **Date:** 2026-05-29 (target architecture revised 2026-06-01)
-**Status:** Phases 1–5 implemented. Phase 4 (cutover) confirmed in production 2026-06-03; Phase 5 (SQLite removed) code-complete 2026-06-04, committed 2026-06-05 (`887e397`), awaiting deploy; search-operator docs (`OR`/`-negation`) committed 2026-06-05 (`8828c90`), awaiting deploy. Follow-on trigram indexing (roadmap #7) scoped 2026-06-05, not yet implemented. Phase 6 (App Runner → Lambda) not started.
+**Status:** Phases 1–5 implemented. Phase 4 (cutover) confirmed in production 2026-06-03; Phase 5 (SQLite removed) code-complete 2026-06-04, committed 2026-06-05 (`887e397`), deployed 2026-06-07; search-operator docs (`OR`/`-negation`) committed 2026-06-05 (`8828c90`), also deployed. The server's dedicated read-only database role (`mcp_ro`) deployed 2026-10-04. Follow-on trigram indexing (roadmap #7) scoped 2026-06-05, not yet implemented. Phase 6 (App Runner → Lambda) not started.
 **Supersedes (in part):** [2026-05-26 — Powers-and-duties on SQLite](./2026-05-26-powers-and-duties-sqlite.md)
 
 ## Context
@@ -106,7 +106,7 @@ The Postgres adapter is not a byte-identical reimplementation of the SQLite one.
 
 The `search_powers_and_duties` tool description deliberately did **not** advertise the operator syntax (#2) while SQLite remained a selectable (and default) backend: on SQLite, `OR` and a leading `-` were sanitised into required literal terms, which silently narrowed or inverted results rather than erroring (`licence OR permit` became "must contain licence AND or AND permit"; `report -annual` became "must contain report AND annual"). With SQLite removed, the description now documents the `OR`/`-negation` syntax (2026-06-05) — see the "Still open" note above.
 
-### Phase 5 — Stop baking SQLite into the image ✅ done 2026-06-04 (code; not yet deployed)
+### Phase 5 — Stop baking SQLite into the image ✅ done 2026-06-04, deployed 2026-06-07
 
 Done as a single reversible commit, after Phase 4 was confirmed in production (prod on `pg`, Aurora-only data signatures present, duties tools working end-to-end):
 
@@ -118,7 +118,7 @@ Done as a single reversible commit, after Phase 4 was confirmed in production (p
 
 Note: the local `data/duties.db` file is left on disk (it is gitignored, so not part of the commit) as a convenience; it is no longer referenced by any code path.
 
-**Infra follow-up (2026-08-25).** The stack side has caught up with this phase. `DUTIES_DB_BACKEND` was still being set by `McpStack` for a server that had stopped reading it, and `sqlite` was still an accepted value — which passed both cluster ARNs to the runtime while withholding the Data API IAM grant, so the duties tools would have been advertised and then failed `AccessDenied` on every call. The selector is now gone from `bin/app.ts`, `McpStack`, and `.env.example`, and the stack rejects a half-configured cluster at synth. At the same time the runtime stopped receiving the cluster's master credentials: it authenticates as a dedicated read-only role (`mcp_ro`) provisioned by `scripts/apply-readonly-role.js`. Details in the infra copy of this ADR under *Database credentials*.
+**Infra follow-up (2026-08-25).** The stack side has caught up with this phase. `DUTIES_DB_BACKEND` was still being set by `McpStack` for a server that had stopped reading it, and `sqlite` was still an accepted value — which passed both cluster ARNs to the runtime while withholding the Data API IAM grant, so the duties tools would have been advertised and then failed `AccessDenied` on every call. The selector is now gone from `bin/app.ts`, `McpStack`, and `.env.example`, and the stack rejects a half-configured cluster at synth. At the same time the runtime stopped receiving the cluster's master credentials: it authenticates as a dedicated read-only role (`mcp_ro`) provisioned by `scripts/apply-readonly-role.js`. Details in the infra copy of this ADR under *Database credentials*. **Deployed 2026-10-04:** until then this paragraph described changes that were committed but not yet live.
 
 **Still open (deliberately deferred, not blockers):**
 - The `idx_duties_actor_aliases` GIN index (`jsonb_path_ops`) only accelerates `@>` containment queries, but the actor filter runs `jsonb_array_elements` + `ILIKE` (case-insensitive substring, which `@>` cannot do). So the index is unused by any query path. Decide whether to drop it or add an exact-match alias path that uses it. Touching it means a live Aurora DDL change, so it is left for the pg_trgm/indexing follow-up rather than this code-only commit. Harmless to leave: the actor filter is normally combined with btree-indexed filters (modality, type, year) that narrow the row set first.
