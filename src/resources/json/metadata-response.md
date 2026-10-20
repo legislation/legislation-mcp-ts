@@ -77,12 +77,15 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
   - Values: `"english"`, `"welsh"`
   - Present when a specific language was requested
 
-### Prospective Status
+### Prospective Provisions
 
-- **prospective** (boolean, optional) - Whether the content is prospective (not yet in force)
-  - `true` when the document or fragment has `Status="Prospective"`
-  - For fragment requests, reflects the fragment's status, not the document's
-  - Absent when the content is in force
+- **prospective** (boolean, optional) - `true` when the response contains provisions not yet in force
+  - Set when the requested document or provision, or anything in it, is marked prospective: its `Status` contains the token `Prospective` and the `RestrictStartDate` attribute is absent. For a `P1` provision, such as a section, its immediate `P1group` parent also counts. Entries in a table of contents count too
+  - It doesn't say whether the returned version is itself the prospective one: `version` does. A version dated `"2024-01-01"` can still contain provisions not yet in force
+  - Never `false`. What its absence tells you depends on the request:
+    - A fragment, or a whole document requested with a `version`, where the text isn't final: the returned text was checked, and no such marking was found
+    - A whole document requested without a `version`, or a table of contents: these hold no provision text, or mark it inconsistently, so there may still be prospective provisions
+    - Final (as enacted or as made) text: the field is always left out, so its absence tells you nothing
 
 ### Available Versions
 

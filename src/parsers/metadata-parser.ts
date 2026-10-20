@@ -10,7 +10,7 @@ import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri } from '../utils
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
 import { readFragmentDates } from './fragment-dates.js';
-import { TreeElement, attribute, hasAttribute, pathTo, tokens } from './xml-tree.js';
+import { TreeElement, attribute, childElements, descendantsOrSelf, hasAttribute, pathTo, tokens } from './xml-tree.js';
 
 /**
  * Structured metadata extracted from legislation
@@ -48,7 +48,10 @@ export interface LegislationMetadata {
 
   language?: string;       // "english" or "welsh"
 
-  // Whether the content is prospective (not yet in force)
+  // True when the response contains provisions not yet in force: the
+  // target, or something in it, is marked prospective with no start date.
+  // Absent when no such marking was found, and always on final text. Whether
+  // the returned version is itself the prospective one is given by `version`.
   prospective?: boolean;
 
   // Available milestone version labels.
@@ -112,6 +115,16 @@ export interface NavigationLinks {
 }
 
 const NAV_REL_PREFIX = 'http://www.legislation.gov.uk/def/navigation/';
+
+/**
+ * Whether the element is marked prospective with no start date: the token
+ * `Prospective` in @Status, and no @RestrictStartDate at all (an empty or
+ * invalid one still counts as a start date).
+ */
+function isProspectiveMarking(element: TreeElement): boolean {
+  return tokens(attribute(element, 'Status')).includes('Prospective')
+    && !hasAttribute(element, 'RestrictStartDate');
+}
 
 export class MetadataParser {
   private parser: XMLParser;
@@ -177,6 +190,10 @@ export class MetadataParser {
     );
 
     const version = MetadataParser.computeVersion(versions, valid, undateableVersion, status, shortType);
+    // The response contains provisions not yet in force. Final text is not a
+    // statement about what is in force, so the field is left out there.
+    const prospective = status !== 'final'
+      && (undateableVersion || this.hasProspectiveProvisions(targetPath));
     // dc:identifier carries the fragment-scoped request URI (Legislation@DocumentURI
     // can be the containing-document URI on fragment responses), so it's the
     // reliable source for the caller's requested point-in-time.
@@ -200,7 +217,7 @@ export class MetadataParser {
       version,
       pointInTime,
       language: parsed.language,
-      prospective: undateableVersion || undefined,
+      prospective: prospective || undefined,
       versions,
       upToDate,
       unappliedEffects,
@@ -448,9 +465,8 @@ export class MetadataParser {
   /**
    * Whether the returned version can't be dated, so that, if it is revised,
    * its label is "prospective". It can't when the target, or the P1group
-   * holding a P1 target, is marked prospective and has no start date: the
-   * token `Prospective` in @Status, and no @RestrictStartDate at all (an empty
-   * or invalid one still counts). A start date is a date the version can be
+   * holding a P1 target, is marked prospective with no start date
+   * (isProspectiveMarking). A start date is a date the version can be
    * labelled with. Each of the two elements is tested on its own, and @Match
    * is not tested.
    *
@@ -464,9 +480,26 @@ export class MetadataParser {
     const target = targetPath[targetPath.length - 1];
     const parent = targetPath[targetPath.length - 2];
     const tested = target.tag === 'P1' && parent?.tag === 'P1group' ? [target, parent] : [target];
-    return tested.some(element =>
-      tokens(attribute(element, 'Status')).includes('Prospective')
-      && !hasAttribute(element, 'RestrictStartDate'));
+    return tested.some(isProspectiveMarking);
+  }
+
+  /**
+   * Whether anything inside the target is marked prospective with no start
+   * date, as isUndateableVersion reads a marking, whatever its tag or @Match.
+   * A marked entry in a table of contents counts, as does a marking in an
+   * alternative version inside the target. With isUndateableVersion, this is
+   * the LGU2 API's `prospective` signal (ADR 2026-09-04): the response
+   * contains provisions not yet in force.
+   */
+  private hasProspectiveProvisions(targetPath: TreeElement[] | undefined): boolean {
+    if (!targetPath) return false;
+    const target = targetPath[targetPath.length - 1];
+    for (const child of childElements(target.node)) {
+      for (const element of descendantsOrSelf(child)) {
+        if (isProspectiveMarking(element)) return true;
+      }
+    }
+    return false;
   }
 
   /**

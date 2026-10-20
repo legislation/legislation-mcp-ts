@@ -17,6 +17,8 @@ export const description = `Retrieve structured metadata for a UK legislation do
 
 Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\` (\`draft\`/\`final\`/\`revised\`/\`proposed\`), \`extent\` (e.g. \`["E","W","S","NI"]\`), key dates (\`enactmentDate\`/\`madeDate\`), \`version\` (label of the returned representation), \`pointInTime\` (requested date, when present), \`versions\` (available milestone version labels), and \`unappliedEffects\` (amendments enacted but not yet applied to the text).
 
+\`prospective\` is \`true\` when the response contains provisions not yet in force; \`version\` says whether the returned version is itself the prospective one. The field is never \`false\`, and it is absent on enacted/made text. A whole document requested without a \`version\` holds no provision text, so there its absence doesn't mean there are no prospective provisions.
+
 \`unappliedEffects\` and \`upToDate\` are only present for the latest version (no \`version\` parameter). When a specific version is requested, both fields are omitted — effects are not tracked for point-in-time snapshots. For the latest version, \`upToDate\` is \`true\` when all in-force effects have been applied, \`false\` when some are outstanding.
 
 Fragment: pass a \`fragment\` to scope metadata to a specific provision (e.g. \`"section/12"\`, \`"part/2/chapter/1"\`). \`unappliedEffects\` and \`upToDate\` are scoped to the fragment for both revised and enacted/made legislation. Use \`get_legislation_table_of_contents\` to discover valid fragment IDs.

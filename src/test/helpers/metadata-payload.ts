@@ -48,3 +48,9 @@ export function versionsOf(xml: string) {
   const { version, versions } = new MetadataParser().parse(xml);
   return { version, versions };
 }
+
+/** The parsed `version`, `versions` and `prospective`, with `prospective` present even when undefined. */
+export function signalsOf(xml: string) {
+  const { version, versions, prospective } = new MetadataParser().parse(xml);
+  return { version, versions, prospective };
+}

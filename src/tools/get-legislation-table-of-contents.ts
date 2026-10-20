@@ -13,6 +13,8 @@ export const description = `Retrieve the table of contents for a UK legislation 
 
 Shows the hierarchical structure (Parts, Chapters, Sections) with headings and fragment IDs for use with get_legislation_fragment.
 
+\`meta.prospective\` is \`true\` when the response indicates that the document contains provisions not yet in force. It is left out on enacted/made text. Contents entries are marked inconsistently, so its absence doesn't mean there are no prospective provisions.
+
 \`type\`, \`year\`, and \`number\` must be exact. If you're not certain, use search_legislation to confirm — identifiers guessed from general knowledge are often wrong.
 
 Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. Do not pass \`version="prospective"\`; when metadata lists \`"prospective"\`, that is the latest version and should be fetched by omitting the \`version\` parameter.
