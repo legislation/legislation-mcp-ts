@@ -9,6 +9,8 @@ import { XMLParser } from 'fast-xml-parser';
 import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri } from '../utils/legislation-uri.js';
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
+import { readFragmentDates } from './fragment-dates.js';
+import { TreeElement, attribute, pathTo } from './xml-tree.js';
 
 /**
  * Structured metadata extracted from legislation
@@ -150,16 +152,23 @@ export class MetadataParser {
     const upToDate = !unappliedEffects.some(e => e.outstanding);
 
     const dcIdentifier = this.parseDcIdentifier(metadata);
-    const fragmentId = dcIdentifier?.fragment;
-    const prospective = this.extractProspective(legislation, fragmentId);
+    // A table of contents describes the whole document, as in the API.
+    const fragmentId = dcIdentifier?.fragment === 'contents' ? undefined : dcIdentifier?.fragment;
+    const targetPath = this.findTarget(legislation, fragmentId);
+    const prospective = this.extractProspective(targetPath);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
+    const valid = this.extractValid(metadata);
+
+    const { startDate, laterDate } = fragmentId !== undefined && targetPath
+      ? readFragmentDates(targetPath, valid)
+      : {};
+    const contentDates = [startDate, laterDate].filter((d): d is string => d !== undefined);
 
     const versions = this.extractVersions(
       legislation, shortType, status, prospective, responseLanguage,
-      fragmentId !== undefined
+      fragmentId !== undefined, contentDates
     );
 
-    const valid = this.extractValid(metadata);
     const version = MetadataParser.computeVersion(versions, valid, prospective, status, shortType);
     // dc:identifier carries the fragment-scoped request URI (Legislation@DocumentURI
     // can be the containing-document URI on fragment responses), so it's the
@@ -293,12 +302,15 @@ export class MetadataParser {
    *  4. For final-status documents, ensure the first-version keyword is present;
    *     if "current" was the only retained label, also add label-only "prospective".
    *  5. For revised prospective content, add label-only "prospective".
-   *  6. Otherwise, for non-final content with `dct:valid`, recover it as a version
+   *  6. Otherwise, for a non-final fragment, add the dates read from its content
+   *     (see fragment-dates.ts): the date its returned version started, and a
+   *     later version's date. The links can leave both out.
+   *  7. Then, for non-final content with `dct:valid`, recover it as a version
    *     label only when "current" was present AND either the response is
-   *     whole-document or the retained fragment set has no other dated labels.
-   *     (A fragment's `dct:valid` may be a containing-document snapshot date rather
-   *     than a fragment milestone.)
-   *  7. Sort: first-version keywords, then dates chronologically, then "prospective".
+   *     whole-document or the fragment has no other dated labels, counting the
+   *     dates added in step 6. (A fragment's `dct:valid` may be a
+   *     containing-document snapshot date rather than a fragment milestone.)
+   *  8. Sort: first-version keywords, then dates chronologically, then "prospective".
    */
   private extractVersions(
     legislation: any,
@@ -306,7 +318,8 @@ export class MetadataParser {
     status: string | undefined,
     prospective: boolean,
     responseLanguage: 'en' | 'cy' | undefined,
-    isFragment: boolean
+    isFragment: boolean,
+    contentDates: string[]
   ): string[] {
     const metadata = legislation?.Metadata;
     const labels = new Set<string>();
@@ -348,6 +361,7 @@ export class MetadataParser {
     if (prospective && isRevised) {
       labels.add('prospective');
     } else if (!isFinal) {
+      for (const date of contentDates) labels.add(date);
       const valid = this.extractValid(metadata);
       if (valid && MetadataParser.shouldRecoverValidDate(sawCurrent, labels, isFragment)) {
         labels.add(valid);
@@ -408,22 +422,32 @@ export class MetadataParser {
   }
 
   /**
-   * Check whether the content is prospective (not yet in force).
-   * For fragment requests, checks the fragment element's Status attribute.
-   * P1 elements inherit Status from their parent P1group, so when the
-   * fragment is a P1 without its own Status, we check the P1group parent.
-   * For whole-document requests, checks the root Legislation element.
+   * The path from the root to the element the response is about: the root
+   * itself for a whole document, or the element whose @id matches the
+   * fragment path (`section/1/1` → `section-1-1`). Undefined if no element
+   * matches. Alternative versions (Versions/Version) are not searched, as
+   * they can carry the same @id as the main text.
    */
-  private extractProspective(legislation: any, fragmentId: string | undefined): boolean {
-    if (fragmentId) {
-      const elementId = fragmentId.replace(/\//g, '-');
-      const result = this.findElementAndParentById(legislation, elementId);
-      if (!result) return false;
-      if (result.element?.['@_Status'] === 'Prospective') return true;
-      if (result.parentTag === 'P1group' && result.parent?.['@_Status'] === 'Prospective') return true;
-      return false;
-    }
-    return legislation?.['@_Status'] === 'Prospective';
+  private findTarget(legislation: any, fragmentId: string | undefined): TreeElement[] | undefined {
+    const root: TreeElement = { tag: 'Legislation', node: legislation };
+    if (fragmentId === undefined) return [root];
+    const elementId = fragmentId.replace(/\//g, '-');
+    return pathTo(root, e => attribute(e, 'id') === elementId, MetadataParser.NOT_TARGETS);
+  }
+
+  private static readonly NOT_TARGETS: ReadonlySet<string> = new Set(['Versions']);
+
+  /**
+   * Check whether the content is prospective (not yet in force), from the
+   * target's Status attribute. P1 elements inherit Status from their parent
+   * P1group, so the P1group parent is checked too.
+   */
+  private extractProspective(targetPath: TreeElement[] | undefined): boolean {
+    if (!targetPath) return false;
+    const target = targetPath[targetPath.length - 1];
+    const parent = targetPath[targetPath.length - 2];
+    if (attribute(target, 'Status') === 'Prospective') return true;
+    return parent?.tag === 'P1group' && attribute(parent, 'Status') === 'Prospective';
   }
 
   /**
@@ -436,42 +460,6 @@ export class MetadataParser {
     const identifier = Array.isArray(raw) ? raw[0] : raw;
     if (!identifier || typeof identifier !== 'string') return undefined;
     return parseLegislationUri(identifier) ?? undefined;
-  }
-
-  /**
-   * Recursively search the parsed XML tree for an element with a matching @_id attribute.
-   * Returns the element together with its immediate parent and the parent's tag name,
-   * so callers can check inherited attributes (e.g. P1 inheriting Status from P1group).
-   *
-   * @param nodeTag - the tag name of `node` (the key its own parent used to store it)
-   * @param parentNode - the object containing `node`
-   * @param parentTag - the tag name of `parentNode`
-   */
-  private findElementAndParentById(
-    node: any,
-    id: string,
-    nodeTag?: string,
-    parentNode?: any,
-    parentTag?: string
-  ): { element: any; parent?: any; parentTag?: string } | undefined {
-    if (node == null || typeof node !== 'object') return undefined;
-
-    if (node['@_id'] === id) return { element: node, parent: parentNode, parentTag };
-
-    for (const key of Object.keys(node)) {
-      if (key.startsWith('@_')) continue;
-      const child = node[key];
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          const found = this.findElementAndParentById(item, id, key, node, nodeTag);
-          if (found) return found;
-        }
-      } else {
-        const found = this.findElementAndParentById(child, id, key, node, nodeTag);
-        if (found) return found;
-      }
-    }
-    return undefined;
   }
 
   /** Extract the dct:valid date from metadata (namespace prefix stripped by parser). */
