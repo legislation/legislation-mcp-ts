@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { MetadataParser } from '../../parsers/metadata-parser.js';
+import { payload, versionsOf } from '../helpers/metadata-payload.js';
 
 const VALID = '2024-11-01';
 
@@ -15,39 +15,6 @@ function links(...titles: string[]): string {
   return [...titles, 'current']
     .map(title => `<atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/section/2/${title}" title="${title}"/>`)
     .join('\n');
-}
-
-/** A payload for ukpga/2024/1, requested at `identifier` (the part after the number). */
-function payload(options: {
-  identifier: string;
-  valid?: string;
-  links: string;
-  content: string;
-  status?: string;
-  documentUri?: string;
-  rootAttributes?: string;
-}): string {
-  const { identifier, valid, content, status = 'revised', documentUri = 'ukpga/2024/1', rootAttributes = '' } = options;
-  return `
-<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
-    DocumentURI="http://www.legislation.gov.uk/${documentUri}" ${rootAttributes}>
-  <ukm:Metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dct="http://purl.org/dc/terms/"
-      xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
-      xmlns:atom="http://www.w3.org/2005/Atom">
-    <dc:identifier>http://www.legislation.gov.uk/ukpga/2024/1/${identifier}</dc:identifier>
-    ${valid ? `<dct:valid>${valid}</dct:valid>` : ''}
-    ${options.links}
-    <ukm:PrimaryMetadata>
-      <ukm:DocumentClassification>
-        <ukm:DocumentMainType Value="UnitedKingdomPublicGeneralAct"/>
-        <ukm:DocumentStatus Value="${status}"/>
-      </ukm:DocumentClassification>
-      <ukm:Year Value="2024"/>
-      <ukm:Number Value="1"/>
-    </ukm:PrimaryMetadata>
-  </ukm:Metadata>
-  ${content}
-</Legislation>`;
 }
 
 /** Section 2, holding subsection (1). The attributes go on the section's P1group and on the subsection. */
@@ -71,11 +38,6 @@ function section(p1groupAttributes: string, subsectionAttributes: string): strin
 /** Section 2 requested at dct:valid, with the given links and content. */
 function sectionPayload(sectionLinks: string, content: string): string {
   return payload({ identifier: `section/2/${VALID}`, valid: VALID, links: sectionLinks, content });
-}
-
-function versionsOf(xml: string) {
-  const { version, versions } = new MetadataParser().parse(xml);
-  return { version, versions };
 }
 
 // --- The fragment's own version ---

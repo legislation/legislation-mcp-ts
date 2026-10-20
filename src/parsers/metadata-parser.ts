@@ -10,7 +10,7 @@ import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri } from '../utils
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
 import { readFragmentDates } from './fragment-dates.js';
-import { TreeElement, attribute, pathTo } from './xml-tree.js';
+import { TreeElement, attribute, hasAttribute, pathTo, tokens } from './xml-tree.js';
 
 /**
  * Structured metadata extracted from legislation
@@ -36,8 +36,8 @@ export interface LegislationMetadata {
   // Selected label identifying the returned representation.
   // Computed from `versions`, `dct:valid`, and prospective status to mirror
   // the Java API: the latest first-version keyword or ISO-date label in
-  // `versions` that is not after `dct:valid`, `"prospective"` for revised
-  // prospective content, or the first-version keyword when `dct:valid` is
+  // `versions` that is not after `dct:valid`, `"prospective"` for a revised
+  // version that can't be dated, or the first-version keyword when `dct:valid` is
   // absent. Falls back to `dct:valid` itself if no eligible label exists.
   version?: string;        // e.g., "enacted", "2024-01-01", "prospective"
 
@@ -120,7 +120,14 @@ export class MetadataParser {
     this.parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: '@_',
-      removeNSPrefix: true  // Strip ukm:, dc:, etc. prefixes
+      removeNSPrefix: true,  // Strip ukm:, dc:, etc. prefixes
+      // Decode numeric character references (&#9;, &#xA;), which
+      // legislation.gov.uk uses for some characters in attribute values.
+      // The option also adds HTML entity names, which can't occur in a
+      // document without a DTD. It is deprecated in favour of a custom
+      // entityDecoder, but that would replace the parser's own decoder and
+      // its expansion limits.
+      htmlEntities: true,
     });
   }
 
@@ -155,7 +162,7 @@ export class MetadataParser {
     // A table of contents describes the whole document, as in the API.
     const fragmentId = dcIdentifier?.fragment === 'contents' ? undefined : dcIdentifier?.fragment;
     const targetPath = this.findTarget(legislation, fragmentId);
-    const prospective = this.extractProspective(targetPath);
+    const undateableVersion = this.isUndateableVersion(targetPath);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
     const valid = this.extractValid(metadata);
 
@@ -165,11 +172,11 @@ export class MetadataParser {
     const contentDates = [startDate, laterDate].filter((d): d is string => d !== undefined);
 
     const versions = this.extractVersions(
-      legislation, shortType, status, prospective, responseLanguage,
+      legislation, shortType, status, undateableVersion, responseLanguage,
       fragmentId !== undefined, contentDates
     );
 
-    const version = MetadataParser.computeVersion(versions, valid, prospective, status, shortType);
+    const version = MetadataParser.computeVersion(versions, valid, undateableVersion, status, shortType);
     // dc:identifier carries the fragment-scoped request URI (Legislation@DocumentURI
     // can be the containing-document URI on fragment responses), so it's the
     // reliable source for the caller's requested point-in-time.
@@ -193,7 +200,7 @@ export class MetadataParser {
       version,
       pointInTime,
       language: parsed.language,
-      prospective: prospective || undefined,
+      prospective: undateableVersion || undefined,
       versions,
       upToDate,
       unappliedEffects,
@@ -301,7 +308,8 @@ export class MetadataParser {
    *     it was the only retained label.
    *  4. For final-status documents, ensure the first-version keyword is present;
    *     if "current" was the only retained label, also add label-only "prospective".
-   *  5. For revised prospective content, add label-only "prospective".
+   *  5. For a revised version that can't be dated (isUndateableVersion), add
+   *     label-only "prospective".
    *  6. Otherwise, for a non-final fragment, add the dates read from its content
    *     (see fragment-dates.ts): the date its returned version started, and a
    *     later version's date. The links can leave both out.
@@ -316,7 +324,7 @@ export class MetadataParser {
     legislation: any,
     shortType: string,
     status: string | undefined,
-    prospective: boolean,
+    undateableVersion: boolean,
     responseLanguage: 'en' | 'cy' | undefined,
     isFragment: boolean,
     contentDates: string[]
@@ -358,7 +366,7 @@ export class MetadataParser {
       if (onlyCurrent) labels.add('prospective');
     }
 
-    if (prospective && isRevised) {
+    if (undateableVersion && isRevised) {
       labels.add('prospective');
     } else if (!isFinal) {
       for (const date of contentDates) labels.add(date);
@@ -375,7 +383,7 @@ export class MetadataParser {
    * Select the label that identifies the returned representation, mirroring the
    * Java API's `Metadata.computeVersion()`:
    *
-   *  1. Revised prospective content → `"prospective"`.
+   *  1. A revised version that can't be dated → `"prospective"`.
    *  2. `dct:valid` absent → type-specific first-version keyword.
    *  3. Otherwise scan the sorted `versions` set for eligible labels (the
    *     first-version keyword, or ISO-date labels not after `dct:valid`) and
@@ -386,11 +394,11 @@ export class MetadataParser {
   private static computeVersion(
     versions: string[],
     valid: string | undefined,
-    prospective: boolean,
+    undateableVersion: boolean,
     status: string | undefined,
     shortType: string
   ): string | undefined {
-    if (prospective && status === 'revised') return 'prospective';
+    if (undateableVersion && status === 'revised') return 'prospective';
     const firstVersion = getFirstVersion(shortType);
     if (valid === undefined) return firstVersion;
     let selected: string | undefined = undefined;
@@ -438,16 +446,27 @@ export class MetadataParser {
   private static readonly NOT_TARGETS: ReadonlySet<string> = new Set(['Versions']);
 
   /**
-   * Check whether the content is prospective (not yet in force), from the
-   * target's Status attribute. P1 elements inherit Status from their parent
-   * P1group, so the P1group parent is checked too.
+   * Whether the returned version can't be dated, so that, if it is revised,
+   * its label is "prospective". It can't when the target, or the P1group
+   * holding a P1 target, is marked prospective and has no start date: the
+   * token `Prospective` in @Status, and no @RestrictStartDate at all (an empty
+   * or invalid one still counts). A start date is a date the version can be
+   * labelled with. Each of the two elements is tested on its own, and @Match
+   * is not tested.
+   *
+   * Markings inside the target don't count: a revised Act routinely holds
+   * provisions awaiting commencement and still has a dated version. This is
+   * the LGU2 API's `undateableVersion` (ADR 2026-09-04; the `prospective`
+   * template in its simplify/metadata.xsl).
    */
-  private extractProspective(targetPath: TreeElement[] | undefined): boolean {
+  private isUndateableVersion(targetPath: TreeElement[] | undefined): boolean {
     if (!targetPath) return false;
     const target = targetPath[targetPath.length - 1];
     const parent = targetPath[targetPath.length - 2];
-    if (attribute(target, 'Status') === 'Prospective') return true;
-    return parent?.tag === 'P1group' && attribute(parent, 'Status') === 'Prospective';
+    const tested = target.tag === 'P1' && parent?.tag === 'P1group' ? [target, parent] : [target];
+    return tested.some(element =>
+      tokens(attribute(element, 'Status')).includes('Prospective')
+      && !hasAttribute(element, 'RestrictStartDate'));
   }
 
   /**

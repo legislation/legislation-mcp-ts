@@ -61,3 +61,12 @@ export function attribute(element: TreeElement, name: string): string | undefine
   const value = element.node[`@_${name}`];
   return value === undefined ? undefined : String(value);
 }
+
+/**
+ * A list-valued attribute's tokens, split on XML whitespace as XPath's
+ * contains-token splits them. The tree keeps tabs and newlines in attribute
+ * values, where XML attribute normalisation would turn them into spaces.
+ */
+export function tokens(value: string | undefined): string[] {
+  return value === undefined ? [] : value.split(/[ \t\r\n]+/).filter(Boolean);
+}
