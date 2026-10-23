@@ -59,19 +59,20 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
 
 ### Version and Language
 
-- **version** (string, optional) - Label identifying the returned representation
-  - Values: a first-version keyword (`"enacted"`, `"made"`, `"created"`, `"adopted"`), an ISO date (`"2024-01-01"`), or `"prospective"` for prospective revised content
+- **version** (string, optional) - Label identifying the returned version
+  - Values: a first-version keyword (`"enacted"`, `"made"`, `"created"`, `"adopted"`), an ISO date (`"2024-01-01"`), or `"prospective"` for a revised version that can't be dated
   - Populated on every response the parser can derive it for, not only when the request specified a version
   - Derivation:
-    - revised prospective content → `"prospective"`
+    - a revised version that can't be dated → `"prospective"`. It can't be dated when the requested document or provision is marked prospective with no start date, or, for a `P1` such as a section, its immediate `P1group` is (see Prospective Provisions). A marking inside it doesn't count
     - no `dct:valid` → type-specific first-version keyword
     - otherwise → the latest first-version keyword or ISO-date label in `versions` that is not after `dct:valid`, falling back to `dct:valid` itself if no eligible label exists
+  - For a fragment, `versions` also holds dates read from its content (see Available Versions). The same rule chooses among all the labels, so a date from the links can be selected instead
 
 - **pointInTime** (string, optional) - Requested point-in-time date
   - Format: ISO 8601 date (YYYY-MM-DD)
   - Populated only when the request URL contained a dated version segment AND the response is not final
   - Absent for `enacted`/`made`/`created`/`adopted` URL segments (use `version` to identify those) and for final-status responses
-  - May differ from `version` on fragment responses: `pointInTime` is what the caller asked for, `version` is the fragment milestone actually selected
+  - May differ from `version`, especially on fragment responses: `pointInTime` is the date asked for, and `version` labels the version returned, which can be earlier
 
 - **language** (string, optional) - Language of the response
   - Values: `"english"`, `"welsh"`
@@ -83,21 +84,27 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
   - Set when the requested document or provision, or anything in it, is marked prospective: its `Status` contains the token `Prospective` and the `RestrictStartDate` attribute is absent. For a `P1` provision, such as a section, its immediate `P1group` parent also counts. Entries in a table of contents count too
   - It doesn't say whether the returned version is itself the prospective one: `version` does. A version dated `"2024-01-01"` can still contain provisions not yet in force
   - Never `false`. What its absence tells you depends on the request:
-    - A fragment, or a whole document requested with a `version`, where the text isn't final: the returned text was checked, and no such marking was found
+    - A fragment, or a whole document requested with a `version`, where the text isn't final: the returned text was checked, and no such marking was found. The exception is a fragment the parser can't find in the response: nothing is then checked
     - A whole document requested without a `version`, or a table of contents: these hold no provision text, or mark it inconsistently, so there may still be prospective provisions
     - Final (as enacted or as made) text: the field is always left out, so its absence tells you nothing
 
 ### Available Versions
 
-- **versions** (array of strings, optional) - Available milestone version labels
+- **versions** (array of strings, optional) - Version labels for the requested document or fragment
+  - Built from the response's `hasVersion` links:
+    - `"current"` is removed, as is a `" repealed"` suffix
+    - on enacted/made (final) text, the first-version keyword is added, and so is `"prospective"` when `"current"` was the only link
+    - for a revised version that can't be dated (see `version`), `"prospective"` is added. Otherwise, on text that isn't final:
+      - for a fragment, up to two dates read from its content are added: the date the returned version started, and a later version's date when the content shows one. The links can leave both out
+      - `dct:valid` is added when the links included `"current"` and, for a fragment, no other date is listed
+  - It is not a complete history, and a listed date doesn't prove that a fragment changed on it. Requests for the same fragment at different dates can list different dates
   - Usually usable as the `version` parameter in subsequent requests
-  - Exception: `"prospective"` is not resolvable as a `version` parameter for `get_legislation` or `get_legislation_fragment`
+  - Exception: `"prospective"` is not accepted as a `version` parameter by any tool
   - When `"prospective"` is present, it is the last and most recent version in the list
   - Fetch that version by omitting the `version` parameter altogether (use the versionless URL)
   - Sorted: first-version keyword (`enacted`/`made`/`created`/`adopted`), then dates chronologically, then `"prospective"`
   - Example: `["enacted", "2020-01-30", "2022-06-01", "2024-01-01"]`
-  - Example (final/original plus current prospective): `["enacted", "prospective"]`
-  - For fragment requests, scoped to the fragment — lists only versions where that provision changed
+  - Example (enacted text, and a later version that can't yet be dated): `["enacted", "prospective"]`
   - Populated on both unversioned and versioned requests
 
 ### Up-to-Date Status
@@ -199,13 +206,26 @@ get_legislation_metadata(type="ukpga", year="2021", number="24", version="enacte
 get_legislation_metadata(type="ukpga", year="2010", number="15", fragment="part/2/chapter/1")
 ```
 
+## Requesting Versions
+
+`get_legislation`, `get_legislation_fragment`, `get_legislation_metadata` and `get_legislation_table_of_contents` take a `version` parameter, which is added to the request URL as written:
+
+- a first-version keyword (`enacted`, `made`, `created`, `adopted`) requests the original text
+- an ISO date (`YYYY-MM-DD`) requests the text as it stood on that date. A date before the first version returns an error
+
+`prospective` is not accepted. When `versions` ends with `"prospective"`, leave `version` out: a request without one returns the latest version, whichever it is.
+
+Any version can have amendments that are in force but not yet applied to its text. `upToDate` and `unappliedEffects` report them on a request without a `version`, and are left out on a request with one.
+
 ## Fragment-Level Metadata
 
 When a `fragment` parameter is provided (e.g. `"section/12"`, `"part/2/chapter/1"`), the metadata is scoped to that provision:
 
+- `version` and `versions` describe the fragment, and `pointInTime` is the date requested
+- `prospective` describes the fragment and what it contains
 - `unappliedEffects` and `upToDate` are scoped to the fragment for both revised and enacted/made legislation
 
-All other fields (`id`, `title`, `status`, etc.) describe the parent document.
+The other fields (`id`, `type`, `year`, `number`, `title`, `status`, `extent` and the dates) describe the parent document.
 
 Use `get_legislation_table_of_contents` to discover valid fragment identifiers.
 

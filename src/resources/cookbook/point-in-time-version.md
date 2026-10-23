@@ -62,7 +62,7 @@ Use a **date** to get the legislation as it stood on that date:
 }
 ```
 
-**Result:** CLML XML reflecting amendments and editorial updates as of that date.
+**Result:** the text as it stood on that date.
 
 ## Worked Example: UKPGA 2024/1
 
@@ -112,15 +112,16 @@ This Act has multiple versions:
 - For primary legislation, use `"enacted"`
 - For secondary legislation (SIs), use `"made"`
 
-**Revised/Current Version (no version parameter):**
-- The legislation as currently in force
-- Includes all amendments applied to date
+**Latest Version (no version parameter):**
+- The latest version of the legislation: usually the text as it stands today
+- When metadata `versions` ends with `"prospective"`, it is the prospective version, which includes provisions not yet in force
+- The text may have outstanding amendments: in force, but not yet applied. Check `upToDate` in `get_legislation_metadata`
 - Has complete editorial metadata (extent, status, etc.)
 - This is what most users need for current legal research
 
 **Point-in-Time Version (`version="YYYY-MM-DD"`):**
 - Snapshot of legislation as it stood on a specific date
-- Shows all amendments that were in force on that date
+- Shows the amendments in force on that date, as far as they have been applied to the text
 - Useful for historical research or understanding how law evolved
 
 ### Why Are Enacted and First Revised Often Identical?
@@ -177,11 +178,11 @@ Use when you want:
 
 **Example use case:** "What did the data protection law say on January 1, 2020, before GDPR changes?"
 
-### When to use no version parameter (current)
+### When to use no version parameter (latest)
 
 Use when you want:
-- The **current law** as it stands today
-- Most recent amendments applied
+- The **latest version**: usually the law as it stands today, or the prospective version (see above)
+- The amendments applied so far (check `upToDate` for outstanding ones)
 - Most common use case for legal research
 - Complete metadata and editorial enhancements
 
@@ -196,16 +197,17 @@ if you need the original published version:
 if you need a historical snapshot:
   use version="YYYY-MM-DD"
 
-if you need the current version:
+if you need the latest version (including a prospective one):
   omit the version parameter
 ```
 
 ## Notes and Limitations
 
-- You can request **any date** and get the legislation as it stood on that day - you don't need to know when specific versions were created.
+- You can request a date without knowing when versions were created: you get the legislation as it stood on that day.
 - Dates **before the first available version** return **an error**, which is indistinguishable from "document not found."
 - Point‑in‑time versions only exist after editorial processing. Very recent legislation may return only the original version.
-- To confirm which version you received, call `get_legislation_metadata` with the same version and check the `status` field (`final` vs `revised`).
+- To confirm which version you received, call `get_legislation_metadata` with the same `version` (and `fragment`, if any) and check its `version` field, the label of the version returned. For a fragment it can be earlier than the date requested. The `status` field says whether that is the original text (`final`) or a revised version (`revised`).
+- When `versions` ends with `"prospective"`, don't pass it as `version`: leave `version` out to fetch that version.
 - For human‑readable output, use `format: "html"` instead of CLML XML.
 
 ## Related Resources

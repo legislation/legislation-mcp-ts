@@ -45,7 +45,7 @@ export const inputSchema = {
     },
     version: {
       type: "string",
-      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch current prospective content. Dates before first version return an error.",
+      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch the prospective version. Dates before first version return an error.",
     },
     language: {
       type: "string",

@@ -23,7 +23,7 @@ Returns JSON with: \`id\`, \`type\`, \`year\`, \`number\`, \`title\`, \`status\`
 
 Fragment: pass a \`fragment\` to scope metadata to a specific provision (e.g. \`"section/12"\`, \`"part/2/chapter/1"\`). \`unappliedEffects\` and \`upToDate\` are scoped to the fragment for both revised and enacted/made legislation. Use \`get_legislation_table_of_contents\` to discover valid fragment IDs.
 
-Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. The returned \`version\` field identifies the selected representation (for fragments, this is the fragment milestone, which may be earlier than the requested \`pointInTime\`). The \`versions\` field may also contain the label \`prospective\`; that label identifies current prospective content but is fetched via the versionless URL rather than as a \`version\` parameter.
+Version: use a date (\`YYYY-MM-DD\`) for a point-in-time snapshot, or \`enacted\`/\`made\`/\`created\`/\`adopted\` for the original version. The returned \`version\` field labels the version returned (for fragments, it may be earlier than the requested \`pointInTime\`). The \`versions\` field may also contain the label \`prospective\`; that label identifies the prospective version, which is fetched by omitting \`version\` rather than by passing it.
 
 For response field details, see \`json://metadata-response\`. For legislation type codes, see \`types://guide\`.
 For checking geographical extent, see \`cookbook://check-extent\`. For retrieving historical versions, see \`cookbook://point-in-time-version\`. For determining whether legislation is up to date and which amendments have yet to be applied, see \`cookbook://check-outstanding-effects\`.`;
@@ -45,7 +45,7 @@ export const inputSchema = {
     },
     version: {
       type: "string",
-      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Dates before first version return an error.",
+      description: "Optional: Version to retrieve. Use enacted/made/created/adopted for original version, or YYYY-MM-DD for legislation as it stood on that date. Do not use prospective here; omit version to fetch the prospective version. Dates before first version return an error.",
     },
     fragment: {
       type: "string",
