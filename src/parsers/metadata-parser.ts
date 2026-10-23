@@ -171,22 +171,23 @@ export class MetadataParser {
     const unappliedEffects = this.parseUnappliedEffects(legislation, parsed.language);
     const upToDate = !unappliedEffects.some(e => e.outstanding);
 
-    const dcIdentifier = this.parseDcIdentifier(metadata);
-    // A table of contents describes the whole document, as in the API.
-    const fragmentId = dcIdentifier?.fragment === 'contents' ? undefined : dcIdentifier?.fragment;
-    const targetPath = this.findTarget(legislation, fragmentId);
+    const identifier = this.extractDcIdentifier(metadata);
+    const dcIdentifier = identifier === undefined ? undefined : parseLegislationUri(identifier) ?? undefined;
+    const targetPath = this.findTarget(legislation, identifier, dcIdentifier);
+    // Anything but the whole document, including a request whose target isn't found.
+    const isFragment = targetPath === undefined || targetPath.length > 1;
     const undateableVersion = this.isUndateableVersion(targetPath);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
     const valid = this.extractValid(metadata);
 
-    const { startDate, laterDate } = fragmentId !== undefined && targetPath
+    const { startDate, laterDate } = isFragment && targetPath
       ? readFragmentDates(targetPath, valid)
       : {};
     const contentDates = [startDate, laterDate].filter((d): d is string => d !== undefined);
 
     const versions = this.extractVersions(
       legislation, shortType, status, undateableVersion, responseLanguage,
-      fragmentId !== undefined, contentDates
+      isFragment, contentDates
     );
 
     const version = MetadataParser.computeVersion(versions, valid, undateableVersion, status, shortType);
@@ -447,20 +448,75 @@ export class MetadataParser {
   }
 
   /**
-   * The path from the root to the element the response is about: the root
-   * itself for a whole document, or the element whose @id matches the
-   * fragment path (`section/1/1` → `section-1-1`). Undefined if no element
-   * matches. Alternative versions (Versions/Version) are not searched, as
-   * they can carry the same @id as the main text.
+   * The path from the root to the element the response is about, or
+   * undefined if none is found. The first two steps are the LGU2 API's
+   * (`$target` in its simplify/metadata.xsl):
+   *
+   *  1. The element whose @DocumentURI is the requested URI: dc:identifier
+   *     with any `/contents` segment removed, keeping its version and
+   *     language. For a whole document or its table of contents, this is
+   *     the root. An InternalLink's @DocumentURI names the link's
+   *     destination, so it is never a match.
+   *  2. For `/schedules` or `/annexes`, the Schedules container, and for
+   *     `/attachments`, the first Attachments container. They have no
+   *     @DocumentURI of their own.
+   *  3. The root, if parseLegislationUri reads the identifier as a whole
+   *     document or its table of contents, or there is no dc:identifier.
+   *  4. The element whose @id matches the fragment path (`section/1/1` →
+   *     `section-1-1`), outside alternative versions (Versions/Version),
+   *     which can carry the same @id as the main text. This finds
+   *     ukpga/1990/43/section/34 (the API's issue #50), whose only
+   *     @DocumentURIs carry an extent.
+   *
+   * The first two steps don't rely on parseLegislationUri, which can't read
+   * a treaty's identifiers. It reads eut/euratom/article/9 as a whole
+   * document, and eut/euratom/article/9/paragraph/2 as that document's
+   * paragraph 2. So steps 3 and 4 are taken only when the identifier and
+   * the root's @DocumentURI both parse, as the same document.
    */
-  private findTarget(legislation: any, fragmentId: string | undefined): TreeElement[] | undefined {
+  private findTarget(
+    legislation: any,
+    identifier: string | undefined,
+    parsed: ParsedLegislationUri | undefined
+  ): TreeElement[] | undefined {
     const root: TreeElement = { tag: 'Legislation', node: legislation };
-    if (fragmentId === undefined) return [root];
-    const elementId = fragmentId.replace(/\//g, '-');
+    if (identifier === undefined) return [root];
+    const lookupId = identifier.replace(/\/contents\//g, '/').replace(/\/contents$/, '');
+    const byUri = pathTo(root, e => e.tag !== 'InternalLink' && attribute(e, 'DocumentURI') === lookupId)
+      ?? MetadataParser.findContainer(root, lookupId);
+    if (byUri) return byUri;
+    const rootUri = attribute(root, 'DocumentURI');
+    const rootParsed = rootUri === undefined ? null : parseLegislationUri(rootUri);
+    const sameDocument = parsed !== undefined && rootParsed !== null
+      && parsed.type === rootParsed.type
+      && parsed.year === rootParsed.year
+      && parsed.number === rootParsed.number;
+    if (!sameDocument) return undefined;
+    if (parsed.fragment === undefined || parsed.fragment === 'contents') return [root];
+    const elementId = parsed.fragment.replace(/\//g, '-');
     return pathTo(root, e => attribute(e, 'id') === elementId, MetadataParser.NOT_TARGETS);
   }
 
   private static readonly NOT_TARGETS: ReadonlySet<string> = new Set(['Versions']);
+
+  /**
+   * Step 2 of findTarget: the Schedules or Attachments container, a child
+   * of the root's main element, when the URI without its version and
+   * language ends `/schedules`, `/annexes` or `/attachments`.
+   */
+  private static findContainer(root: TreeElement, lookupId: string): TreeElement[] | undefined {
+    const uri = lookupId.replace(/\/(english|welsh)$/, '')
+      .replace(/\/(enacted|made|created|adopted|current|prospective|\d{4}-\d{2}-\d{2})$/, '');
+    const tag = /\/(annexes|schedules)$/.test(uri) ? 'Schedules'
+      : /\/attachments$/.test(uri) ? 'Attachments'
+      : undefined;
+    if (tag === undefined) return undefined;
+    for (const main of childElements(root.node)) {
+      const container = childElements(main.node).find(e => e.tag === tag);
+      if (container) return [root, main, container];
+    }
+    return undefined;
+  }
 
   /**
    * Whether the returned version can't be dated, so that, if it is revised,
@@ -503,15 +559,14 @@ export class MetadataParser {
   }
 
   /**
-   * Parse the first dc:identifier, which is the canonical request URI —
+   * The first dc:identifier, which is the canonical request URI —
    * fragment-scoped on fragment responses, where `Legislation@DocumentURI`
    * may carry the containing-document URI instead.
    */
-  private parseDcIdentifier(metadata: any): ParsedLegislationUri | undefined {
+  private extractDcIdentifier(metadata: any): string | undefined {
     const raw = metadata?.identifier;
     const identifier = Array.isArray(raw) ? raw[0] : raw;
-    if (!identifier || typeof identifier !== 'string') return undefined;
-    return parseLegislationUri(identifier) ?? undefined;
+    return identifier && typeof identifier === 'string' ? identifier : undefined;
   }
 
   /** Extract the dct:valid date from metadata (namespace prefix stripped by parser). */

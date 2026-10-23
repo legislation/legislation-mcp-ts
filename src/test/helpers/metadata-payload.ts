@@ -7,11 +7,13 @@ import { MetadataParser } from '../../parsers/metadata-parser.js';
 
 /**
  * A payload for ukpga/2024/1. `identifier` is the part of the request after
- * the number (none for an unversioned whole document); `links` and `content`
- * are inserted as written.
+ * the number (none for an unversioned whole document), or `uri` the whole of
+ * its path, for a request such as a treaty's; `links` and `content` are
+ * inserted as written.
  */
 export function payload(options: {
   identifier?: string;
+  uri?: string;
   valid?: string;
   links: string;
   content: string;
@@ -20,7 +22,7 @@ export function payload(options: {
   rootAttributes?: string;
 }): string {
   const { identifier, valid, content, status = 'revised', documentUri = 'ukpga/2024/1', rootAttributes = '' } = options;
-  const requested = identifier ? `ukpga/2024/1/${identifier}` : 'ukpga/2024/1';
+  const requested = options.uri ?? (identifier ? `ukpga/2024/1/${identifier}` : 'ukpga/2024/1');
   return `
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
     DocumentURI="http://www.legislation.gov.uk/${documentUri}" ${rootAttributes}>
