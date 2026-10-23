@@ -47,7 +47,7 @@ Use a **version keyword** to get the original published version:
 - `created` – Original version for certain uncommon UK types
 - `adopted` – Original version for EU legislation
 
-**Result:** CLML XML (default) for the original published version.
+**Result:** the original published version, as plain text by default. Use `format: "xml"` for CLML XML.
 
 ## Step 3: Retrieve a Point‑in‑Time Version
 
@@ -208,7 +208,7 @@ if you need the latest version (including a prospective one):
 - Point‑in‑time versions only exist after editorial processing. Very recent legislation may return only the original version.
 - To confirm which version you received, call `get_legislation_metadata` with the same `version` (and `fragment`, if any) and check its `version` field, the label of the version returned. For a fragment it can be earlier than the date requested. The `status` field says whether that is the original text (`final`) or a revised version (`revised`).
 - When `versions` ends with `"prospective"`, don't pass it as `version`: leave `version` out to fetch that version.
-- For human‑readable output, use `format: "html"` instead of CLML XML.
+- For human‑readable output, use the default, plain text. Use `format: "xml"` for CLML XML, or `format: "html"` for rendered HTML.
 
 ## Related Resources
 
