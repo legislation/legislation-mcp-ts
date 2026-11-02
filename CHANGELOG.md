@@ -3,7 +3,7 @@
 Changes to the legislation.gov.uk MCP server that affect people who connect to
 it or run it, newest first.
 
-## Unreleased
+## 2026-11-02
 
 - In `get_legislation_metadata`, for a fragment of revised text,
   `unappliedEffects` and `upToDate` now cover only the effects on that
@@ -15,9 +15,6 @@ it or run it, newest first.
   `meta.unappliedEffects` and `meta.upToDate` now come from the effects
   recorded against the legislation. Before, `upToDate` was always true. Both
   are left out if the effects can't be fetched.
-
-## 2026-11-02
-
 - `prospective` in `get_legislation_metadata`, and in the `meta` of
   `get_legislation_table_of_contents`, now means the response contains
   provisions not yet in force. Before, it was set only when the requested
