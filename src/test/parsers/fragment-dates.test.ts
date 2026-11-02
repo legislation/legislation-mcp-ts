@@ -215,6 +215,14 @@ test('with every date after dct:valid, there is no start date but there is a lat
   assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-09-01', versions: ['2024-09-01', '2024-12-15'] });
 });
 
+// The later date counts as a dated label, so dct:valid is not added, and the
+// first version in the links is chosen, as in the LGU2 API. That doesn't show
+// the text is as enacted: the links and markings can be incomplete.
+test('with only a later date in the content, the version is the first version in the links', () => {
+  const xml = sectionPayload(links('enacted'), section('RestrictStartDate="2024-12-01"', ''));
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: 'enacted', versions: ['enacted', '2024-12-01'] });
+});
+
 // Without dct:valid, as in a prospective version, there is no limit, and the
 // version is the first-version keyword.
 test('without dct:valid there is no limit', () => {
