@@ -1,14 +1,15 @@
 /**
  * Shared helpers for checking whether legislation text is up to date.
  *
+ * - currentEffects: the effects on the current text, scoped to the request
+ * - setCurrentEffects: sets `unappliedEffects` and `upToDate` from them
  * - getUpToDateCallout: generates a callout block for plain-text responses
  * - fetchAllEffects: paginated fetch of all effects from the changes API
- *   (used by both the callout and the metadata tool)
  */
 
 import { LegislationClient } from "../api/legislation-client.js";
 import { EffectsParser } from "../parsers/effects-parser.js";
-import { MetadataParser, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
+import { LegislationMetadata, MetadataParser, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
 import { filterEffectsForFragment } from "./get-legislation-metadata.js";
 
 /**
@@ -27,6 +28,25 @@ export async function getUpToDateCallout(
   const parser = new MetadataParser();
   const metadata = parser.parse(xml, requestScope(fragment));
 
+  const effects = await currentEffects(metadata, client, fragment);
+  if (!effects || !effects.some(e => e.outstanding)) return undefined;
+
+  return {
+    type: "text",
+    text: `> [!NOTE]\n> There are effects in force that have not yet been reflected in this text. Use the \`search_effects\` tool with \`applied: false\` to see unapplied effects affecting this legislation.`,
+  };
+}
+
+/**
+ * The effects on the current text, for a request without a `version`. When a
+ * fragment is requested, only the effects on it are kept. Returns undefined
+ * when the effects can't be fetched.
+ */
+export async function currentEffects(
+  metadata: LegislationMetadata,
+  client: LegislationClient,
+  fragment?: string
+): Promise<UnappliedEffect[] | undefined> {
   let effects = metadata.unappliedEffects;
 
   // Enacted/made documents (status "final") don't include unapplied effects
@@ -44,17 +64,24 @@ export async function getUpToDateCallout(
 
   if (!effects) return undefined;
 
-  if (fragment) {
-    effects = filterEffectsForFragment(effects, fragment);
-  }
+  // The XML and /changes both hold the effects on the whole document.
+  return fragment && requestScope(fragment) === 'fragment'
+    ? filterEffectsForFragment(effects, fragment)
+    : effects;
+}
 
-  const upToDate = !effects.some(e => e.outstanding);
-  if (upToDate) return undefined;
-
-  return {
-    type: "text",
-    text: `> [!NOTE]\n> There are effects in force that have not yet been reflected in this text. Use the \`search_effects\` tool with \`applied: false\` to see unapplied effects affecting this legislation.`,
-  };
+/**
+ * Set `unappliedEffects` and `upToDate` from the current effects, or leave
+ * both out when the effects can't be fetched.
+ */
+export async function setCurrentEffects(
+  metadata: LegislationMetadata,
+  client: LegislationClient,
+  fragment?: string
+): Promise<void> {
+  const effects = await currentEffects(metadata, client, fragment);
+  metadata.unappliedEffects = effects;
+  metadata.upToDate = effects ? !effects.some(e => e.outstanding) : undefined;
 }
 
 /**

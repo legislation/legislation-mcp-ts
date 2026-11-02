@@ -3,6 +3,15 @@
 Changes to the legislation.gov.uk MCP server that affect people who connect to
 it or run it, newest first.
 
+## Unreleased
+
+- In `get_legislation_metadata`, for a fragment of revised text,
+  `unappliedEffects` and `upToDate` now cover only the effects on that
+  fragment. Before, they covered the whole document, so an amendment elsewhere
+  could make `upToDate` false. For enacted or made text, a request for the
+  `contents` fragment now covers the whole document, as it does for revised
+  text.
+
 ## 2026-11-02
 
 - `prospective` in `get_legislation_metadata`, and in the `meta` of

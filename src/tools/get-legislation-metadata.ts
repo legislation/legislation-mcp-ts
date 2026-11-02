@@ -5,9 +5,9 @@
  */
 
 import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
-import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
+import { MetadataParser, ProvisionRef, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
 import { contains } from "../utils/section-range-containment.js";
-import { fetchAllEffects } from "./up-to-date-callout.js";
+import { setCurrentEffects } from "./up-to-date-callout.js";
 
 export const name = "get_legislation_metadata";
 
@@ -100,21 +100,7 @@ export async function execute(
     metadata.unappliedEffects = undefined;
     metadata.upToDate = undefined;
   } else {
-    // Enacted/made versions (status "final") never contain unapplied effects in
-    // the XML, even when outstanding effects exist. When the caller asked for the
-    // current version and received an enacted/made version, no revised version
-    // exists yet, so there cannot be any already-applied effects: anything
-    // returned by /changes is necessarily still unapplied to the text.
-    // Fetch effects from the changes API instead.
-    if (metadata.status === 'final') {
-      try {
-        await enrichWithEffects(metadata, client, fragment);
-      } catch {
-        // Effects search failed — return metadata without effects rather than failing entirely
-        metadata.unappliedEffects = undefined;
-        metadata.upToDate = undefined;
-      }
-    }
+    await setCurrentEffects(metadata, client, fragment);
   }
 
   return {
@@ -125,24 +111,6 @@ export async function execute(
       }
     ],
   };
-}
-
-/**
- * Fetch all effects targeting this legislation from the changes API and
- * inject them into the metadata, replacing the (empty) XML-derived values.
- * When a fragment is provided, only effects targeting that provision are kept.
- */
-async function enrichWithEffects(
-  metadata: LegislationMetadata,
-  client: LegislationClient,
-  fragment?: string
-) {
-  const allEffects = await fetchAllEffects(metadata, client);
-  const effects = fragment
-    ? filterEffectsForFragment(allEffects, fragment)
-    : allEffects;
-  metadata.unappliedEffects = effects;
-  metadata.upToDate = !effects.some(e => e.outstanding);
 }
 
 /**

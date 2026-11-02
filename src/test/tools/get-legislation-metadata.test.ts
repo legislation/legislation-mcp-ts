@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import { filterEffectsForFragment } from '../../tools/get-legislation-metadata.js';
 import { UnappliedEffect } from '../../parsers/metadata-parser.js';
 import * as metadata from '../../tools/get-legislation-metadata.js';
-import { payload } from '../helpers/metadata-payload.js';
+import { changesFeed, effectXml, payload } from '../helpers/metadata-payload.js';
 
 /** Minimal effect stub with only the fields filterEffectsForFragment inspects. */
 function effect(refs: UnappliedEffect['target']['refs']): UnappliedEffect {
@@ -193,4 +193,83 @@ test('execute reads a whole-document request as the whole document', async () =>
 test('execute reads a request for the contents fragment as the whole document', async () => {
   const xml = payload({ identifier: 'contents', valid: VALID, links: SCOPE_LINKS, content: SECTION });
   assert.deepStrictEqual(await versionsFrom({ fragment: 'contents' }, xml), WHOLE_DOCUMENT);
+});
+
+// --- The effects on the current text ---
+
+// Each effect is outstanding, so `upToDate` is false whenever one is kept.
+
+const ON_SECTIONS_1_AND_2 = [effectXml('UnappliedEffect', 'section/1'), effectXml('UnappliedEffect', 'section/2')].join('');
+const FEED_ON_SECTIONS_1_AND_2 = changesFeed([effectXml('Effect', 'section/1'), effectXml('Effect', 'section/2')]);
+
+/**
+ * The provisions of the `unappliedEffects` the tool returns, and `upToDate`.
+ * Every endpoint returns `xml`, and the changes API returns `feed` or fails.
+ */
+async function effectsFrom(args: { fragment?: string; version?: string }, xml: string, feed?: string) {
+  const response = { kind: 'document' as const, content: xml };
+  const searches: number[] = [];
+  const client = {
+    getDocumentMetadata: async () => response,
+    getDocument: async () => response,
+    getFragment: async () => response,
+    searchChanges: async ({ page }: { page: number }) => {
+      searches.push(page);
+      if (feed === undefined) throw new Error('changes API unavailable');
+      return feed;
+    },
+  };
+  const result = await metadata.execute({ type: 'ukpga', year: '2024', number: '1', ...args }, client as any);
+  const { unappliedEffects, upToDate } = JSON.parse((result.content[0] as { text: string }).text);
+  const provisions = (unappliedEffects as UnappliedEffect[] | undefined)
+    ?.map(e => e.target.refs?.map(ref => ref.type === 'section' ? ref.ref : `${ref.start}..${ref.end}`).join());
+  return { provisions, upToDate, searched: searches.length > 0 };
+}
+
+test('execute keeps only the effects on a revised fragment', async () => {
+  const xml = payload({ identifier: 'section/2', links: '', content: SECTION, effects: ON_SECTIONS_1_AND_2 });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'section/2' }, xml),
+    { provisions: ['section-2'], upToDate: false, searched: false });
+});
+
+test('execute finds a revised fragment up to date when the outstanding effects are elsewhere', async () => {
+  const xml = payload({ identifier: 'section/2', links: '', content: SECTION, effects: effectXml('UnappliedEffect', 'section/1') });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'section/2' }, xml),
+    { provisions: [], upToDate: true, searched: false });
+});
+
+test('execute keeps every effect on a revised whole document', async () => {
+  const xml = payload({ links: '', content: SECTION, effects: ON_SECTIONS_1_AND_2 });
+  assert.deepStrictEqual(await effectsFrom({}, xml),
+    { provisions: ['section-1', 'section-2'], upToDate: false, searched: false });
+});
+
+test('execute keeps every effect on a revised contents request', async () => {
+  const xml = payload({ identifier: 'contents', links: '', content: SECTION, effects: ON_SECTIONS_1_AND_2 });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'contents' }, xml),
+    { provisions: ['section-1', 'section-2'], upToDate: false, searched: false });
+});
+
+test('execute keeps only the fetched effects on an enacted fragment', async () => {
+  const xml = payload({ identifier: 'section/2', links: '', content: SECTION, status: 'final' });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'section/2' }, xml, FEED_ON_SECTIONS_1_AND_2),
+    { provisions: ['section-2'], upToDate: false, searched: true });
+});
+
+test('execute keeps every fetched effect on an enacted contents request', async () => {
+  const xml = payload({ identifier: 'contents', links: '', content: SECTION, status: 'final' });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'contents' }, xml, FEED_ON_SECTIONS_1_AND_2),
+    { provisions: ['section-1', 'section-2'], upToDate: false, searched: true });
+});
+
+test('execute leaves out the effects on enacted text when they cannot be fetched', async () => {
+  const xml = payload({ identifier: 'section/2', links: '', content: SECTION, status: 'final' });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'section/2' }, xml),
+    { provisions: undefined, upToDate: undefined, searched: true });
+});
+
+test('execute leaves out the effects on a versioned request', async () => {
+  const xml = payload({ identifier: 'section/2', links: '', content: SECTION, effects: ON_SECTIONS_1_AND_2 });
+  assert.deepStrictEqual(await effectsFrom({ fragment: 'section/2', version: '2024-10-01' }, xml),
+    { provisions: undefined, upToDate: undefined, searched: false });
 });
