@@ -63,7 +63,7 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
   - Values: a first-version keyword (`"enacted"`, `"made"`, `"created"`, `"adopted"`), an ISO date (`"2024-01-01"`), or `"prospective"` for a revised version that can't be dated
   - Populated on every response the parser can derive it for, not only when the request specified a version
   - Derivation:
-    - a revised version that can't be dated → `"prospective"`. It can't be dated when the requested document or provision is marked prospective with no start date, or, for a `P1` such as a section, its immediate `P1group` is (see Prospective Provisions). A marking inside it doesn't count
+    - a revised version that can't be dated → `"prospective"`. It can't be dated when the requested document or provision is marked prospective with no start date (see Prospective Provisions). For a provision in a section, the same goes for the section (`P1`), the section's `P1group`, and anything between the section and the provision: a subsection of a prospective section can't be dated. A marking inside the provision doesn't count, and nor does one above the section
     - no `dct:valid` → type-specific first-version keyword
     - otherwise → the latest first-version keyword or ISO-date label in `versions` that is not after `dct:valid`, falling back to `dct:valid` itself if no eligible label exists
   - For a fragment, `versions` also holds dates read from its content (see Available Versions). The same rule chooses among all the labels, so a date from the links can be selected instead
@@ -81,7 +81,7 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
 ### Prospective Provisions
 
 - **prospective** (boolean, optional) - `true` when the response contains provisions not yet in force
-  - Set when the requested document or provision, or anything in it, is marked prospective: its `Status` contains the token `Prospective` and the `RestrictStartDate` attribute is absent. For a `P1` provision, such as a section, its immediate `P1group` parent also counts. Entries in a table of contents count too
+  - Set when the requested document or provision, or anything in it, is marked prospective: its `Status` contains the token `Prospective` and the `RestrictStartDate` attribute is absent. For a provision in a section, the section (`P1`), its `P1group` and anything between the section and the provision also count. Entries in a table of contents count too
   - It doesn't say whether the returned version is itself the prospective one: `version` does. A version dated `"2024-01-01"` can still contain provisions not yet in force
   - Never `false`. What its absence tells you depends on the request:
     - A fragment, or a whole document requested with a `version`, where the text isn't final: the returned text was checked, and no such marking was found. The exception is a fragment the parser can't find in the response: nothing is then checked

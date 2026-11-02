@@ -27,7 +27,7 @@ This ADR keeps four things apart: what follows the API, where the MCP goes beyon
 | Finding the requested element | `$target` in `simplify/metadata.xsl` | `findFragment`, steps 1 and 2 |
 
 - **Dates from a fragment's content.** For a fragment that isn't final, and whose version can be dated, up to two dates read from its content are added to `versions`. One is the date the returned version started, no later than `dct:valid` when there is one. The other, only when there is a `dct:valid`, is a later version's date after it. `version` is still chosen from `versions` against `dct:valid`, so a date from the links can be chosen over the content's.
-- **A version that can't be dated.** A revised version is labelled `"prospective"` when the requested element is itself marked prospective with no start date. That means the token `Prospective` in `@Status` and no `@RestrictStartDate`. For a `P1`, its `P1group` counts too. A marking inside the element doesn't count.
+- **A version that can't be dated.** A revised version is labelled `"prospective"` when the requested element is itself marked prospective with no start date. That means the token `Prospective` in `@Status` and no `@RestrictStartDate`. For a `P1`, its `P1group` counts too. A marking inside the element doesn't count. The MCP also tests the section holding a sub-provision (§2).
 - **The `prospective` field.** It is `true` when the version can't be dated, or when anything inside the requested element is marked in the same way, whatever its `@Match`. It is never `false`, and it is left out on final text.
 - **Finding the requested element.** For a fragment, first by `@DocumentURI`: the element whose URI is `dc:identifier` with any `/contents` removed, keeping its version and language. An `InternalLink`'s URI names its destination, so it never matches. Failing that, the `Schedules` container for `/schedules` or `/annexes`, and the first `Attachments` container for `/attachments`.
 
@@ -40,6 +40,8 @@ This ADR keeps four things apart: what follows the API, where the MCP goes beyon
 The fallback needs the identifier and the root's `@DocumentURI` to parse as the same document: the same type, year and number. The parser misreads treaty identifiers. It reads `eut/euratom/article/9/paragraph/2` as paragraph 2 of a document `eut/euratom/article/9`. Without the check, such a request would take any element with the id `paragraph-2`.
 
 When no element is found for a fragment, nothing is inspected: no content dates are read, and `prospective` is left out.
+
+**A sub-provision of a prospective section.** The test for a version that can't be dated also covers the elements from the requested element up to its nearest `P1`, and that `P1`'s `P1group`. The API tests only the requested element and, for a `P1`, its `P1group`. So it gives `ukpga/2026/19/section/2/1`, a subsection of a prospective section, the version `enacted` and publishes `prospective: false`. Markings above the section, on a Part, Schedule or crossheading, still don't count. In the payloads checked, a section inside a marked container was always marked itself. A matching change to the API is to be reviewed separately. Until then, the two differ here.
 
 ### 3. The MCP's own contract
 
@@ -77,6 +79,6 @@ These are not decisions.
 Constructed payloads, following the API's tests where they exist:
 
 - `src/test/parsers/fragment-dates.test.ts`: content dates
-- `src/test/parsers/prospective.test.ts`: the undateable version and the field
+- `src/test/parsers/prospective.test.ts`: the undateable version and the field, including a sub-provision of a prospective section
 - `src/test/parsers/fragment-target.test.ts`: finding the requested element, including the treaty and regnal-year cases
 - `src/test/tools/get-legislation-metadata.test.ts` and `src/test/parsers/toc-parser.test.ts`: the scope each caller passes

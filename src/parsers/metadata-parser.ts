@@ -537,23 +537,28 @@ export class MetadataParser {
 
   /**
    * Whether the returned version can't be dated, so that, if it is revised,
-   * its label is "prospective". It can't when the target, or the P1group
-   * holding a P1 target, is marked prospective with no start date
-   * (isProspectiveMarking). A start date is a date the version can be
-   * labelled with. Each of the two elements is tested on its own, and @Match
-   * is not tested.
+   * its label is "prospective". It can't when the target is marked
+   * prospective with no start date (isProspectiveMarking), or, inside a
+   * section, anything from the target up to its nearest P1, or the P1group
+   * holding that P1. So a subsection of a prospective section can't be
+   * dated either. A start date is a date the version can be labelled with.
+   * Each element is tested on its own, and @Match is not tested.
    *
    * Markings inside the target don't count: a revised Act routinely holds
-   * provisions awaiting commencement and still has a dated version. This is
-   * the LGU2 API's `undateableVersion` (ADR 2026-09-04; the `prospective`
-   * template in its simplify/metadata.xsl).
+   * provisions awaiting commencement and still has a dated version. Nor do
+   * markings above the section, on a Part, Schedule or crossheading.
+   *
+   * This follows the LGU2 API's `undateableVersion` (ADR 2026-09-04; the
+   * `prospective` template in its simplify/metadata.xsl), which tests only
+   * the target and, for a P1, its P1group. Testing the elements between a
+   * sub-provision and its P1 is the MCP's own step.
    */
   private isUndateableVersion(targetPath: TreeElement[] | undefined): boolean {
     if (!targetPath) return false;
-    const target = targetPath[targetPath.length - 1];
-    const parent = targetPath[targetPath.length - 2];
-    const tested = target.tag === 'P1' && parent?.tag === 'P1group' ? [target, parent] : [target];
-    return tested.some(isProspectiveMarking);
+    const p1 = targetPath.map(e => e.tag).lastIndexOf('P1');
+    if (p1 < 0) return isProspectiveMarking(targetPath[targetPath.length - 1]);
+    const group = p1 > 0 && targetPath[p1 - 1].tag === 'P1group' ? [targetPath[p1 - 1]] : [];
+    return [...group, ...targetPath.slice(p1)].some(isProspectiveMarking);
   }
 
   /**

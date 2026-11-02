@@ -3,7 +3,9 @@
  * isUndateableVersion, which decides whether a revised version is labelled
  * "prospective" instead of a date, and the published `prospective` field,
  * which says the response contains provisions not yet in force. The cases
- * follow the LGU2 API's ProspectiveSignalsTest; the payloads are constructed.
+ * follow the LGU2 API's ProspectiveSignalsTest, except those for a
+ * sub-provision and the section holding it, which are the MCP's own. The
+ * payloads are constructed.
  */
 
 import { test } from 'node:test';
@@ -56,26 +58,48 @@ function paragraph(p1groupAttributes: string, p1Attributes = ''): string {
 </P1group>`;
 }
 
-/** Section 2, requested unversioned as `identifier`, with attributes on its P1group, its P1 and its subsection (1). */
-function section(identifier: string, attributes: { p1group?: string; p1?: string; p2?: string }): string {
+/**
+ * Section 2, requested unversioned as `identifier`, under a crossheading. The
+ * attributes go on the crossheading, the section's P1group and P1, its
+ * subsection (1), paragraph (a) of that subsection, and its subsection (2).
+ */
+function section(
+  identifier: string,
+  attributes: { pblock?: string; p1group?: string; p1?: string; p2?: string; p3?: string; sibling?: string },
+  status = 'revised'
+): string {
   return payload({
     identifier,
-    valid: VALID,
+    valid: status === 'final' ? undefined : VALID,
+    status,
     links: links(identifier, 'enacted'),
     content: `
 <Primary><Body>
-  <P1group ${attributes.p1group ?? ''}>
-    <Title>Heading</Title>
-    <P1 id="section-2" ${attributes.p1 ?? ''}>
-      <Pnumber>2</Pnumber>
-      <P1para>
-        <P2 id="section-2-1" ${attributes.p2 ?? ''}>
-          <Pnumber>1</Pnumber>
-          <P2para><Text>Text.</Text></P2para>
-        </P2>
-      </P1para>
-    </P1>
-  </P1group>
+  <Pblock ${attributes.pblock ?? ''}>
+    <Title>Crossheading</Title>
+    <P1group ${attributes.p1group ?? ''}>
+      <Title>Heading</Title>
+      <P1 id="section-2" ${attributes.p1 ?? ''}>
+        <Pnumber>2</Pnumber>
+        <P1para>
+          <P2 id="section-2-1" ${attributes.p2 ?? ''}>
+            <Pnumber>1</Pnumber>
+            <P2para>
+              <Text>Text.</Text>
+              <P3 id="section-2-1-a" ${attributes.p3 ?? ''}>
+                <Pnumber>a</Pnumber>
+                <P3para><Text>Text.</Text></P3para>
+              </P3>
+            </P2para>
+          </P2>
+          <P2 id="section-2-2" ${attributes.sibling ?? ''}>
+            <Pnumber>2</Pnumber>
+            <P2para><Text>Text.</Text></P2para>
+          </P2>
+        </P1para>
+      </P1>
+    </P1group>
+  </Pblock>
 </Body></Primary>`,
   });
 }
@@ -170,9 +194,10 @@ test('a P1 in a P1group marked with a start date is dated', () => {
   assert.deepStrictEqual(signalsOf(xml, 'fragment'), DATED);
 });
 
-// A P1group can also hold a P. Only a P1 target's P1group is tested, as in the
-// API: a P1group may hold more than one provision. The P1group is not inside
-// the target, so it is not one of the target's provisions either.
+// A P1group can also hold a P. With no P1 at or above the target, only the
+// target is tested, as in the API: a P1group may hold more than one provision.
+// The P1group is not inside the target, so it is not one of the target's
+// provisions either.
 test('a target other than a P1 is not undateable because its P1group is marked', () => {
   const xml = payload({
     identifier: 'section/3',
@@ -187,6 +212,45 @@ test('a target other than a P1 is not undateable because its P1group is marked',
 </Body></Primary>`,
   });
   assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATED);
+});
+
+// --- A sub-provision and the section holding it ---
+
+// Testing the elements between a sub-provision and its P1 goes beyond the
+// LGU2 API, which tests only the target and, for a P1, its P1group.
+
+// As ukpga/2026/19/section/2/1: the marking sits on the section's P1group.
+test('a subsection is undateable when its section\'s P1group is marked with no start date', () => {
+  assert.deepStrictEqual(signalsOf(section('section/2/1', { p1group: 'Status="Prospective"' }), 'fragment'), UNDATEABLE);
+});
+
+test('a subsection is undateable when its section is marked with no start date', () => {
+  assert.deepStrictEqual(signalsOf(section('section/2/1', { p1: 'Status="Prospective"' }), 'fragment'), UNDATEABLE);
+});
+
+test('a paragraph is undateable when the subsection holding it is marked, in a dated, unmarked section', () => {
+  const xml = section('section/2/1/a', { p1: 'RestrictStartDate="2024-10-01"', p2: 'Status="Prospective"' });
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATEABLE);
+});
+
+test('a subsection of a section marked with a start date is dated', () => {
+  const xml = section('section/2/1', { p1group: 'Status="Prospective" RestrictStartDate="2024-10-01"' });
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), DATED);
+});
+
+test('a subsection is not undateable because a sibling is marked', () => {
+  assert.deepStrictEqual(signalsOf(section('section/2/1', { sibling: 'Status="Prospective"' }), 'fragment'), UNDATED);
+});
+
+// Markings above the section are not tested. In real payloads, a section
+// inside a marked crossheading, Part or Schedule is marked itself.
+test('a subsection is not undateable because the crossheading above its section is marked', () => {
+  assert.deepStrictEqual(signalsOf(section('section/2/1', { pblock: 'Status="Prospective"' }), 'fragment'), UNDATED);
+});
+
+test('final text: a subsection of a marked section is not undateable, and the field is left out', () => {
+  const xml = section('section/2/1', { p1group: 'Status="Prospective"', p2: 'Status="Prospective"' }, 'final');
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), { version: 'enacted', versions: ['enacted'], prospective: undefined });
 });
 
 // --- Markings inside the target ---
