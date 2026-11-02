@@ -117,6 +117,18 @@ export interface NavigationLinks {
 const NAV_REL_PREFIX = 'http://www.legislation.gov.uk/def/navigation/';
 
 /**
+ * What was requested: a whole document, including its table of contents, or
+ * a fragment of it. The caller knows which; the response can't be relied on
+ * to say (the LGU2 API takes it from the endpoint).
+ */
+export type RequestScope = 'document' | 'fragment';
+
+/** The scope of a request with this `fragment` parameter. `contents` is the whole document's table of contents. */
+export function requestScope(fragment: string | undefined): RequestScope {
+  return fragment === undefined || fragment === '' || fragment === 'contents' ? 'document' : 'fragment';
+}
+
+/**
  * Whether the element is marked prospective with no start date: the token
  * `Prospective` in @Status, and no @RestrictStartDate at all (an empty or
  * invalid one still counts as a start date).
@@ -150,8 +162,11 @@ export class MetadataParser {
    * suppressing fields that are not meaningful for the request context
    * (e.g. unappliedEffects and upToDate for versioned requests, where
    * effects are not tracked for historical snapshots).
+   *
+   * `scope` says whether a whole document or a fragment was requested
+   * (see requestScope).
    */
-  parse(xml: string): LegislationMetadata {
+  parse(xml: string, scope: RequestScope): LegislationMetadata {
     const obj = this.parser.parse(xml);
 
     // Navigate to root Legislation element
@@ -173,9 +188,10 @@ export class MetadataParser {
 
     const identifier = this.extractDcIdentifier(metadata);
     const dcIdentifier = identifier === undefined ? undefined : parseLegislationUri(identifier) ?? undefined;
-    const targetPath = this.findTarget(legislation, identifier, dcIdentifier);
-    // Anything but the whole document, including a request whose target isn't found.
-    const isFragment = targetPath === undefined || targetPath.length > 1;
+    const isFragment = scope === 'fragment';
+    const targetPath = isFragment
+      ? this.findFragment(legislation, identifier, dcIdentifier)
+      : [{ tag: 'Legislation', node: legislation }];
     const undateableVersion = this.isUndateableVersion(targetPath);
     const responseLanguage = this.extractResponseLanguage(metadata, parsed.language);
     const valid = this.extractValid(metadata);
@@ -448,21 +464,19 @@ export class MetadataParser {
   }
 
   /**
-   * The path from the root to the element the response is about, or
-   * undefined if none is found. The first two steps are the LGU2 API's
-   * (`$target` in its simplify/metadata.xsl):
+   * The path from the root to the requested fragment's element, or
+   * undefined if none is found. A whole document's element is its root,
+   * which parse takes without looking it up. The first two steps are the
+   * LGU2 API's (`$target` in its simplify/metadata.xsl):
    *
    *  1. The element whose @DocumentURI is the requested URI: dc:identifier
    *     with any `/contents` segment removed, keeping its version and
-   *     language. For a whole document or its table of contents, this is
-   *     the root. An InternalLink's @DocumentURI names the link's
+   *     language. An InternalLink's @DocumentURI names the link's
    *     destination, so it is never a match.
    *  2. For `/schedules` or `/annexes`, the Schedules container, and for
    *     `/attachments`, the first Attachments container. They have no
    *     @DocumentURI of their own.
-   *  3. The root, if parseLegislationUri reads the identifier as a whole
-   *     document or its table of contents, or there is no dc:identifier.
-   *  4. The element whose @id matches the fragment path (`section/1/1` →
+   *  3. The element whose @id matches the fragment path (`section/1/1` →
    *     `section-1-1`), outside alternative versions (Versions/Version),
    *     which can carry the same @id as the main text. This finds
    *     ukpga/1990/43/section/34 (the API's issue #50), whose only
@@ -471,16 +485,20 @@ export class MetadataParser {
    * The first two steps don't rely on parseLegislationUri, which can't read
    * a treaty's identifiers. It reads eut/euratom/article/9 as a whole
    * document, and eut/euratom/article/9/paragraph/2 as that document's
-   * paragraph 2. So steps 3 and 4 are taken only when the identifier and
-   * the root's @DocumentURI both parse, as the same document.
+   * paragraph 2. So step 3 is taken only when the identifier and the root's
+   * @DocumentURI both parse, as the same document.
+   *
+   * Each step takes the first match in a depth-first walk of the parsed
+   * tree. The tree groups siblings that share a name, so if two elements
+   * match, the one taken need not be the first in the document.
    */
-  private findTarget(
+  private findFragment(
     legislation: any,
     identifier: string | undefined,
     parsed: ParsedLegislationUri | undefined
   ): TreeElement[] | undefined {
+    if (identifier === undefined) return undefined;
     const root: TreeElement = { tag: 'Legislation', node: legislation };
-    if (identifier === undefined) return [root];
     const lookupId = identifier.replace(/\/contents\//g, '/').replace(/\/contents$/, '');
     const byUri = pathTo(root, e => e.tag !== 'InternalLink' && attribute(e, 'DocumentURI') === lookupId)
       ?? MetadataParser.findContainer(root, lookupId);
@@ -491,8 +509,7 @@ export class MetadataParser {
       && parsed.type === rootParsed.type
       && parsed.year === rootParsed.year
       && parsed.number === rootParsed.number;
-    if (!sameDocument) return undefined;
-    if (parsed.fragment === undefined || parsed.fragment === 'contents') return [root];
+    if (!sameDocument || parsed.fragment === undefined) return undefined;
     const elementId = parsed.fragment.replace(/\//g, '-');
     return pathTo(root, e => attribute(e, 'id') === elementId, MetadataParser.NOT_TARGETS);
   }
@@ -500,7 +517,7 @@ export class MetadataParser {
   private static readonly NOT_TARGETS: ReadonlySet<string> = new Set(['Versions']);
 
   /**
-   * Step 2 of findTarget: the Schedules or Attachments container, a child
+   * Step 2 of findFragment: the Schedules or Attachments container, a child
    * of the root's main element, when the URI without its version and
    * language ends `/schedules`, `/annexes` or `/attachments`.
    */

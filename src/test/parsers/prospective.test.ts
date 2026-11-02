@@ -93,48 +93,48 @@ function wholeDocument(rootAttributes: string, sectionAttributes = ''): string {
 // --- The marking and the start date ---
 
 test('a target marked prospective with no start date is undateable', () => {
-  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective"')), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective"'), 'fragment'), UNDATEABLE);
 });
 
 // As ukpga/2023/50/schedule/2: a start date is a date the version can be labelled with.
 test('a target marked prospective with a start date is dated by it', () => {
-  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective" RestrictStartDate="2024-10-01"')), DATED);
+  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective" RestrictStartDate="2024-10-01"'), 'fragment'), DATED);
 });
 
 for (const value of ['', 'not a date']) {
   test(`a marked target with RestrictStartDate=${JSON.stringify(value)} is not undateable: the attribute is present`, () => {
-    assert.deepStrictEqual(signalsOf(schedule(`Status="Prospective" RestrictStartDate="${value}"`)), UNDATED);
+    assert.deepStrictEqual(signalsOf(schedule(`Status="Prospective" RestrictStartDate="${value}"`), 'fragment'), UNDATED);
   });
 }
 
 // As ukpga/2003/44/schedule/31: the marking that keeps a provision out of every
 // dated snapshot is what leaves its version with no date.
 test('a marked target is undateable even when Match="false"', () => {
-  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective" Match="false"')), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(schedule('Status="Prospective" Match="false"'), 'fragment'), UNDATEABLE);
 });
 
 test('an unmarked fragment contains no prospective provisions', () => {
-  assert.deepStrictEqual(signalsOf(schedule('')), UNDATED);
+  assert.deepStrictEqual(signalsOf(schedule(''), 'fragment'), UNDATED);
 });
 
 // --- Reading @Status as a list ---
 
 for (const value of ['Repealed Prospective', 'Prospective Repealed', 'Repealed\tProspective', 'Repealed\nProspective', 'Repealed\r\nProspective', '  Prospective  ']) {
   test(`Prospective is found as one of the values in Status=${JSON.stringify(value)}`, () => {
-    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`)), UNDATEABLE);
+    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`), 'fragment'), UNDATEABLE);
   });
 }
 
 // legislation.gov.uk writes some characters in attribute values as numeric references.
 for (const value of ['Repealed&#9;Prospective', 'Repealed&#x9;Prospective', 'Repealed&#10;Prospective', 'Repealed&#xA;Prospective', 'Prospe&#99;tive', 'Prospe&#x63;tive']) {
   test(`Prospective is found in Status=${JSON.stringify(value)}, with its references decoded`, () => {
-    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`)), UNDATEABLE);
+    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`), 'fragment'), UNDATEABLE);
   });
 }
 
 for (const value of ['NotProspective', 'prospective', 'Prospective,Repealed', 'Repealed', 'Repealed&amp;#9;Prospective']) {
   test(`Status=${JSON.stringify(value)} is not a prospective marking`, () => {
-    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`)), UNDATED);
+    assert.deepStrictEqual(signalsOf(schedule(`Status="${value}"`), 'fragment'), UNDATED);
   });
 }
 
@@ -142,32 +142,32 @@ for (const value of ['NotProspective', 'prospective', 'Prospective,Repealed', 'R
 
 // As ukpga/2026/19/section/1: for a P1 the marking usually sits on the P1group.
 test('a P1 is undateable when its P1group is marked with no start date', () => {
-  assert.deepStrictEqual(signalsOf(section('section/2', { p1group: 'Status="Prospective"' })), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(section('section/2', { p1group: 'Status="Prospective"' }), 'fragment'), UNDATEABLE);
 });
 
 test('a P1 marked with no start date is undateable', () => {
-  assert.deepStrictEqual(signalsOf(section('section/2', { p1: 'Status="Prospective"' })), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(section('section/2', { p1: 'Status="Prospective"' }), 'fragment'), UNDATEABLE);
 });
 
 // The P1 and its P1group are tested separately: either one qualifies on its own.
 test('a dated P1 is undateable when its P1group is marked with no start date', () => {
   const xml = section('section/2', { p1group: 'Status="Prospective"', p1: 'RestrictStartDate="2024-10-01"' });
-  assert.deepStrictEqual(signalsOf(xml), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATEABLE);
 });
 
 test('a P1 marked with no start date is undateable when its P1group is dated', () => {
   const xml = section('section/2', { p1group: 'RestrictStartDate="2024-10-01"', p1: 'Status="Prospective"' });
-  assert.deepStrictEqual(signalsOf(xml), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATEABLE);
 });
 
 test('a P1 marked with a start date, in an unmarked P1group, is dated', () => {
   const xml = section('section/2', { p1: 'Status="Prospective" RestrictStartDate="2024-10-01"' });
-  assert.deepStrictEqual(signalsOf(xml), DATED);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), DATED);
 });
 
 test('a P1 in a P1group marked with a start date is dated', () => {
   const xml = section('section/2', { p1group: 'Status="Prospective" RestrictStartDate="2024-10-01"' });
-  assert.deepStrictEqual(signalsOf(xml), DATED);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), DATED);
 });
 
 // A P1group can also hold a P. Only a P1 target's P1group is tested, as in the
@@ -186,57 +186,57 @@ test('a target other than a P1 is not undateable because its P1group is marked',
   </P1group>
 </Body></Primary>`,
   });
-  assert.deepStrictEqual(signalsOf(xml), UNDATED);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATED);
 });
 
 // --- Markings inside the target ---
 
 test('a marked sub-provision requested directly is undateable', () => {
-  assert.deepStrictEqual(signalsOf(section('section/2/1', { p2: 'Status="Prospective"' })), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(section('section/2/1', { p2: 'Status="Prospective"' }), 'fragment'), UNDATEABLE);
 });
 
 test('a marking inside the target is a prospective provision, but the version stays dated', () => {
-  assert.deepStrictEqual(signalsOf(section('section/2', { p2: 'Status="Prospective"' })), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(section('section/2', { p2: 'Status="Prospective"' }), 'fragment'), UNDATED_WITH_PROVISIONS);
 });
 
 // As the Victims and Courts Act 2026, whose markings are all Match="false".
 test('a marked provision counts when it is Match="false"', () => {
   const xml = schedule('', { body: paragraph('Status="Prospective" Match="false"') });
-  assert.deepStrictEqual(signalsOf(xml), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATED_WITH_PROVISIONS);
 });
 
 test('a marked provision counts inside an element that is Match="false"', () => {
   const xml = schedule('', { body: paragraph('Match="false"', 'Status="Prospective"') });
-  assert.deepStrictEqual(signalsOf(xml), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATED_WITH_PROVISIONS);
 });
 
 test('a provision marked with a start date is not a prospective provision', () => {
   const xml = schedule('', { body: paragraph('Status="Prospective" RestrictStartDate="2024-10-01"') });
-  assert.deepStrictEqual(signalsOf(xml), DATED);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), DATED);
 });
 
 test('a provision\'s marking is read as a list too', () => {
   const xml = schedule('', { body: paragraph('Status="Repealed&#9;Prospective"') });
-  assert.deepStrictEqual(signalsOf(xml), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), UNDATED_WITH_PROVISIONS);
 });
 
 // --- Whole documents ---
 
 test('a whole document is undateable when its root is marked with no start date', () => {
-  assert.deepStrictEqual(signalsOf(wholeDocument('Status="Prospective"')), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(wholeDocument('Status="Prospective"'), 'document'), UNDATEABLE);
 });
 
 test('a whole document whose root is marked with a start date is not undateable', () => {
-  assert.deepStrictEqual(signalsOf(wholeDocument('Status="Prospective" RestrictStartDate="2024-10-01"')), UNDATED);
+  assert.deepStrictEqual(signalsOf(wholeDocument('Status="Prospective" RestrictStartDate="2024-10-01"'), 'document'), UNDATED);
 });
 
 // As ukpga/2026/18, a revised Act with provisions awaiting commencement and a dated version.
 test('a whole document holding a marked provision has a dated version and contains prospective provisions', () => {
-  assert.deepStrictEqual(signalsOf(wholeDocument('', 'Status="Prospective"')), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(wholeDocument('', 'Status="Prospective"'), 'document'), UNDATED_WITH_PROVISIONS);
 });
 
 test('an unmarked whole document contains no prospective provisions', () => {
-  assert.deepStrictEqual(signalsOf(wholeDocument('')), UNDATED);
+  assert.deepStrictEqual(signalsOf(wholeDocument(''), 'document'), UNDATED);
 });
 
 // --- Responses that read no provision text ---
@@ -252,11 +252,11 @@ function contents(entryAttributes: string): string {
 }
 
 test('a marked entry in a table of contents is a prospective provision', () => {
-  assert.deepStrictEqual(signalsOf(contents('Match="false" Status="Prospective"')), UNDATED_WITH_PROVISIONS);
+  assert.deepStrictEqual(signalsOf(contents('Match="false" Status="Prospective"'), 'document'), UNDATED_WITH_PROVISIONS);
 });
 
 test('a table of contents with no marked entry leaves the field out', () => {
-  assert.deepStrictEqual(signalsOf(contents('')), UNDATED);
+  assert.deepStrictEqual(signalsOf(contents(''), 'document'), UNDATED);
 });
 
 // As /resources/data.xml, which has no body.
@@ -265,11 +265,11 @@ function metadataOnly(rootAttributes: string): string {
 }
 
 test('a metadata-only response keeps a marking on its root', () => {
-  assert.deepStrictEqual(signalsOf(metadataOnly('Status="Prospective"')), UNDATEABLE);
+  assert.deepStrictEqual(signalsOf(metadataOnly('Status="Prospective"'), 'document'), UNDATEABLE);
 });
 
 test('a metadata-only response with no marking leaves the field out', () => {
-  assert.deepStrictEqual(signalsOf(metadataOnly('')), UNDATED);
+  assert.deepStrictEqual(signalsOf(metadataOnly(''), 'document'), UNDATED);
 });
 
 // --- Final text and the links ---
@@ -279,10 +279,10 @@ test('a metadata-only response with no marking leaves the field out', () => {
 // status doing it.
 test('final text is never undateable and leaves the field out, whatever its markings', () => {
   const xml = schedule('Status="Prospective"', { status: 'final', body: paragraph('Status="Prospective"') });
-  assert.deepStrictEqual(signalsOf(xml), { version: 'enacted', versions: ['enacted'], prospective: undefined });
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), { version: 'enacted', versions: ['enacted'], prospective: undefined });
 });
 
 test('a prospective link does not make the version undateable', () => {
   const xml = schedule('RestrictStartDate="2024-10-01"', { titles: ['enacted', 'prospective'] });
-  assert.deepStrictEqual(signalsOf(xml), { ...DATED, versions: ['enacted', '2024-10-01', 'prospective'] });
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), { ...DATED, versions: ['enacted', '2024-10-01', 'prospective'] });
 });

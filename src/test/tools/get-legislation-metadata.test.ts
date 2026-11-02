@@ -1,5 +1,5 @@
 /**
- * Tests for get-legislation-metadata helpers and endpoint selection
+ * Tests for get-legislation-metadata helpers, endpoint selection and request scope
  */
 
 import { test } from 'node:test';
@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import { filterEffectsForFragment } from '../../tools/get-legislation-metadata.js';
 import { UnappliedEffect } from '../../parsers/metadata-parser.js';
 import * as metadata from '../../tools/get-legislation-metadata.js';
+import { payload } from '../helpers/metadata-payload.js';
 
 /** Minimal effect stub with only the fields filterEffectsForFragment inspects. */
 function effect(refs: UnappliedEffect['target']['refs']): UnappliedEffect {
@@ -143,4 +144,53 @@ test('execute uses getFragment for fragment requests', async () => {
   };
   await metadata.execute({ type: 'ukpga', year: '2020', number: '2', fragment: 'section/1' }, client as any);
   assert.deepStrictEqual(calls, ['getFragment']);
+});
+
+// --- The request's scope ---
+
+// The tool says whether a fragment was requested. Each payload below gives
+// different versions under the other scope: read as a fragment, the date in
+// the content is added; read as a whole document, it isn't, and dct:valid is
+// added beside the first version.
+
+const VALID = '2024-11-01';
+const SCOPE_LINKS = ['enacted', 'current']
+  .map(title => `<atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/${title}" title="${title}"/>`)
+  .join('\n');
+const SECTION = `
+<Primary><Body>
+  <P1group RestrictStartDate="2024-10-01">
+    <P1 id="section-2" DocumentURI="http://www.legislation.gov.uk/ukpga/2024/1/section/2"><Pnumber>2</Pnumber></P1>
+  </P1group>
+</Body></Primary>`;
+const DATED_BY_CONTENT = { version: '2024-10-01', versions: ['enacted', '2024-10-01'] };
+const WHOLE_DOCUMENT = { version: VALID, versions: ['enacted', VALID] };
+
+/** The `version` and `versions` the tool returns for this request, when every endpoint returns `xml`. */
+async function versionsFrom(args: { fragment?: string; version?: string }, xml: string) {
+  const response = { kind: 'document' as const, content: xml };
+  const client = {
+    getDocumentMetadata: async () => response,
+    getDocument: async () => response,
+    getFragment: async () => response,
+    searchChanges: async () => { throw new Error('not expected'); },
+  };
+  const result = await metadata.execute({ type: 'ukpga', year: '2024', number: '1', ...args }, client as any);
+  const { version, versions } = JSON.parse((result.content[0] as { text: string }).text);
+  return { version, versions };
+}
+
+test('execute reads a fragment request as a fragment', async () => {
+  const xml = payload({ identifier: 'section/2', valid: VALID, links: SCOPE_LINKS, content: SECTION });
+  assert.deepStrictEqual(await versionsFrom({ fragment: 'section/2' }, xml), DATED_BY_CONTENT);
+});
+
+test('execute reads a whole-document request as the whole document', async () => {
+  const xml = payload({ valid: VALID, links: SCOPE_LINKS, content: SECTION });
+  assert.deepStrictEqual(await versionsFrom({}, xml), WHOLE_DOCUMENT);
+});
+
+test('execute reads a request for the contents fragment as the whole document', async () => {
+  const xml = payload({ identifier: 'contents', valid: VALID, links: SCOPE_LINKS, content: SECTION });
+  assert.deepStrictEqual(await versionsFrom({ fragment: 'contents' }, xml), WHOLE_DOCUMENT);
 });

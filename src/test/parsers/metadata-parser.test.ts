@@ -39,7 +39,7 @@ const SAMPLE_METADATA_XML = `
 
 test('MetadataParser parses primary legislation metadata', () => {
   const parser = new MetadataParser();
-  const result = parser.parse(SAMPLE_METADATA_XML);
+  const result = parser.parse(SAMPLE_METADATA_XML, 'document');
 
   assert.strictEqual(result.id, 'ukpga/2020/2', 'Should extract simplified id');
   assert.strictEqual(result.type, 'ukpga', 'Should extract type code');
@@ -56,7 +56,7 @@ test('MetadataParser handles extent normalization', () => {
   const parser = new MetadataParser();
   const xmlWithNI = SAMPLE_METADATA_XML.replace('RestrictExtent="E+W+S+N.I."', 'RestrictExtent="N.I."');
 
-  const result = parser.parse(xmlWithNI);
+  const result = parser.parse(xmlWithNI, 'document');
   assert.deepStrictEqual(result.extent, ['NI'], 'Should normalize N.I. to NI');
 });
 
@@ -64,7 +64,7 @@ test('MetadataParser handles missing extent', () => {
   const parser = new MetadataParser();
   const xmlWithoutExtent = SAMPLE_METADATA_XML.replace('RestrictExtent="E+W+S+N.I."', '');
 
-  const result = parser.parse(xmlWithoutExtent);
+  const result = parser.parse(xmlWithoutExtent, 'document');
   assert.strictEqual(result.extent, undefined, 'Should handle missing extent');
 });
 
@@ -75,7 +75,7 @@ test('MetadataParser decodes standard XML entities in metadata title', () => {
     'Direct Payments &amp; Farmers &lt;Continuity&gt; Act 2020'
   );
 
-  const result = parser.parse(xmlWithEntities);
+  const result = parser.parse(xmlWithEntities, 'document');
   assert.strictEqual(result.title, 'Direct Payments & Farmers <Continuity> Act 2020');
 });
 
@@ -83,12 +83,12 @@ test('MetadataParser strips id prefix correctly', () => {
   const parser = new MetadataParser();
 
   // Test with http:// prefix
-  let result = parser.parse(SAMPLE_METADATA_XML);
+  let result = parser.parse(SAMPLE_METADATA_XML, 'document');
   assert.strictEqual(result.id, 'ukpga/2020/2', 'Should strip http://www.legislation.gov.uk/ prefix');
 
   // Test with https:// prefix (also valid)
   const httpsXml = SAMPLE_METADATA_XML.replace('http://www.legislation.gov.uk/', 'https://www.legislation.gov.uk/');
-  result = parser.parse(httpsXml);
+  result = parser.parse(httpsXml, 'document');
   assert.strictEqual(result.id, 'ukpga/2020/2', 'Should strip https://www.legislation.gov.uk/ prefix');
 
   // Test with id/ in the path
@@ -96,7 +96,7 @@ test('MetadataParser strips id prefix correctly', () => {
     'DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2"',
     'DocumentURI="http://www.legislation.gov.uk/id/ukpga/2020/2"'
   );
-  result = parser.parse(idXml);
+  result = parser.parse(idXml, 'document');
   assert.strictEqual(result.id, 'ukpga/2020/2', 'Should strip http://www.legislation.gov.uk/id/ prefix');
 });
 
@@ -132,7 +132,7 @@ const XML_WITH_EFFECTS = `
 
 test('MetadataParser parses unapplied effects and identifies outstanding ones', () => {
   const parser = new MetadataParser();
-  const result = parser.parse(XML_WITH_EFFECTS);
+  const result = parser.parse(XML_WITH_EFFECTS, 'document');
 
   assert.strictEqual(result.upToDate, false, 'Should not be up to date because of outstanding effect');
   assert.strictEqual(result.unappliedEffects?.length, 2, 'Should have 2 unapplied effects');
@@ -175,7 +175,7 @@ test('MetadataParser uses Welsh effect titles for Welsh documents', () => {
 </Legislation>
 `;
 
-  const result = parser.parse(welshXml);
+  const result = parser.parse(welshXml, 'document');
   assert.strictEqual(result.language, 'welsh');
 
   const effect = result.unappliedEffects?.[0];
@@ -218,7 +218,7 @@ test('MetadataParser parses structured provision refs from AffectedProvisions el
 </Legislation>
 `;
 
-  const result = parser.parse(xmlWithRefs);
+  const result = parser.parse(xmlWithRefs, 'document');
   const effect = result.unappliedEffects?.[0];
 
   assert.strictEqual(effect?.target.provisions, 's. 1(2)(a)', 'Should still have plain text provisions');
@@ -286,7 +286,7 @@ const REVISED_WITH_VERSIONS_XML = `
 
 test('MetadataParser extracts sorted versions from hasVersion links', () => {
   const parser = new MetadataParser();
-  const result = parser.parse(REVISED_WITH_VERSIONS_XML);
+  const result = parser.parse(REVISED_WITH_VERSIONS_XML, 'document');
 
   // Whole-document revised with "current" stripped: recover dct:valid so the
   // identity of the returned snapshot isn't lost alongside "current".
@@ -316,7 +316,7 @@ test('MetadataParser ensures first-version keyword for final documents', () => {
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['enacted', '2024-01-01'],
     'Should add "enacted" for final ukpga');
 });
@@ -341,7 +341,7 @@ test('MetadataParser synthesizes "prospective" for final secondary legislation w
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['made', 'prospective'],
     'Should add "made" and synthesized "prospective" for final uksi with only "current"');
 });
@@ -366,7 +366,7 @@ test('MetadataParser synthesizes "prospective" for final document with only "cur
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
     'Should add first-version keyword and synthesized "prospective"');
 });
@@ -393,7 +393,7 @@ test('MetadataParser strips " repealed" suffix from version labels', () => {
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.ok(result.versions?.includes('2024-01-01'), 'Should strip " repealed" suffix');
   assert.ok(!result.versions?.some(v => v.includes('repealed')), 'No version should contain "repealed"');
 });
@@ -421,7 +421,7 @@ test('MetadataParser sets prospective from Status attribute', () => {
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.strictEqual(result.prospective, true, 'Should be prospective when Status="Prospective"');
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
     'Revised prospective content gets label-only "prospective", not dct:valid');
@@ -460,7 +460,7 @@ test('MetadataParser detects prospective from P1group parent Status', () => {
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   assert.strictEqual(result.prospective, true,
     'Should detect prospective from P1group parent when P1 has no Status');
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
@@ -501,7 +501,7 @@ test('MetadataParser handles multiple dc:identifier elements for fragment lookup
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   assert.strictEqual(result.prospective, true,
     'Should detect prospective from P1group even with multiple dc:identifier');
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
@@ -510,7 +510,7 @@ test('MetadataParser handles multiple dc:identifier elements for fragment lookup
 
 test('MetadataParser does not set prospective when Status is absent', () => {
   const parser = new MetadataParser();
-  const result = parser.parse(SAMPLE_METADATA_XML);
+  const result = parser.parse(SAMPLE_METADATA_XML, 'document');
   assert.strictEqual(result.prospective, undefined, 'Should not set prospective when Status is absent');
 });
 
@@ -545,7 +545,7 @@ test('MetadataParser filters hasVersion links by hreflang for Welsh responses', 
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   assert.strictEqual(result.language, 'welsh');
   assert.deepStrictEqual(result.versions, ['made', '2021-02-27'],
     'Should keep only Welsh-language hasVersion links and not inject dct:valid');
@@ -576,7 +576,7 @@ test('MetadataParser filters hasVersion links by dc:language for English respons
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   assert.strictEqual(result.language, undefined);
   assert.deepStrictEqual(result.versions, ['made', '2021-05-17'],
     'Should use dc:language as fallback and keep only English-language hasVersion links');
@@ -607,7 +607,7 @@ test('MetadataParser keeps untagged hasVersion links alongside matching hreflang
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['enacted', '2024-01-01'],
     'Should keep untagged links and matching-language links, but discard non-matching hreflang links');
 });
@@ -636,7 +636,7 @@ test('MetadataParser keeps all hasVersion links when response language cannot be
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.strictEqual(result.language, undefined);
   assert.deepStrictEqual(result.versions, ['enacted', '2021-02-27', '2021-05-17'],
     'Should keep all hasVersion links when neither URI nor dc:language determines the response language');
@@ -666,7 +666,7 @@ test('MetadataParser filters by language before synthesizing prospective for fin
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['enacted', 'prospective'],
     'Should drop non-matching language links before applying the final current-only prospective rule');
 });
@@ -695,7 +695,7 @@ test('MetadataParser does not recover dct:valid on a fragment that already has a
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   // dct:valid may be a containing-document snapshot date, not a fragment milestone.
   assert.deepStrictEqual(result.versions, ['2024-10-01'],
     'Fragment response with dated milestone keeps only that milestone, ignoring later dct:valid');
@@ -724,7 +724,7 @@ test('MetadataParser recovers dct:valid on a fragment when only "current" was re
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   // No dated fragment milestone remains after stripping "current", so dct:valid
   // is the only value that identifies the returned representation.
   assert.deepStrictEqual(result.versions, ['2024-11-01'],
@@ -733,7 +733,7 @@ test('MetadataParser recovers dct:valid on a fragment when only "current" was re
 
 test('MetadataParser returns empty versions when no hasVersion links exist', () => {
   const parser = new MetadataParser();
-  const result = parser.parse(SAMPLE_METADATA_XML);
+  const result = parser.parse(SAMPLE_METADATA_XML, 'document');
   assert.deepStrictEqual(result.versions, [], 'Should be empty array when no hasVersion links');
 });
 
@@ -744,7 +744,7 @@ test('MetadataParser populates all fields for versioned URIs', () => {
     'DocumentURI="http://www.legislation.gov.uk/ukpga/2020/2/enacted"'
   );
 
-  const result = parser.parse(xmlWithVersion);
+  const result = parser.parse(xmlWithVersion, 'document');
   // The /enacted URL segment isn't an ISO date, so pointInTime is undefined.
   // version resolves via computeVersion's "no dct:valid → first-version keyword" branch.
   assert.strictEqual(result.version, 'enacted');
@@ -779,7 +779,7 @@ test('MetadataParser.version is "prospective" for revised prospective content', 
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.strictEqual(result.version, 'prospective');
   assert.strictEqual(result.pointInTime, undefined);
 });
@@ -815,7 +815,7 @@ test('MetadataParser.version selects latest milestone not after dct:valid on a f
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'fragment');
   assert.strictEqual(result.version, '2024-10-01');
   assert.strictEqual(result.pointInTime, '2024-11-01');
   assert.deepStrictEqual(result.versions, ['2024-10-01']);
@@ -848,7 +848,7 @@ test('MetadataParser.version falls back to dct:valid when no milestone is eligib
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.deepStrictEqual(result.versions, ['prospective']);
   assert.strictEqual(result.version, '2024-01-01');
 });
@@ -872,7 +872,7 @@ test('MetadataParser.pointInTime is undefined for final-status responses', () =>
 </Legislation>
 `;
 
-  const result = parser.parse(xml);
+  const result = parser.parse(xml, 'document');
   assert.strictEqual(result.pointInTime, undefined);
   assert.strictEqual(result.version, 'enacted');
 });

@@ -1,12 +1,14 @@
 /**
- * Tests for how metadata-parser.ts finds the element a response is about
- * (findTarget), as it shows in `version`, `versions` and `prospective`. Each
- * part of the constructed document has its own date and markings, so a
- * request that reached the wrong part would get different values.
+ * Tests for how metadata-parser.ts finds the element a response is about, as
+ * it shows in `version`, `versions` and `prospective`: the root for a whole
+ * document, and findFragment's element for a fragment. Each part of the
+ * constructed document has its own date and markings, so a request that
+ * reached the wrong part would get different values.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { requestScope } from '../../parsers/metadata-parser.js';
 import { payload, signalsOf } from '../helpers/metadata-payload.js';
 
 const VALID = '2024-11-01';
@@ -101,7 +103,7 @@ const SUFFIXES = ['', `/${VALID}`, '/welsh', `/${VALID}/welsh`];
 for (const [path, expected] of Object.entries(EXPECTED)) {
   for (const suffix of SUFFIXES) {
     test(`${path}${suffix} reads only its own part of the document`, () => {
-      assert.deepStrictEqual(signalsOf(request(path, suffix)), expected);
+      assert.deepStrictEqual(signalsOf(request(path, suffix), 'fragment'), expected);
     });
   }
 }
@@ -123,7 +125,7 @@ test('an element with the requested URI is the target before one with the matchi
   </P1group>
 </Body></Primary>`,
   });
-  assert.deepStrictEqual(signalsOf(xml), dated('2024-03-01'));
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), dated('2024-03-01'));
 });
 
 // As ukpga/1990/43/section/34 (the API's issue #50), whose versions'
@@ -150,7 +152,7 @@ test('a provision whose URIs carry extents is found by its id, outside Versions'
   </P1group>
 </Body></Primary>`,
   });
-  assert.deepStrictEqual(signalsOf(xml), dated('2024-03-01'));
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), dated('2024-03-01'));
 });
 
 // --- Identifiers the URI parser can't read ---
@@ -167,23 +169,23 @@ function treaty(path: string, versionLinks = LINKS, content = document('', 'eut/
 }
 
 test('a treaty\'s attachments are found without the URI parser', () => {
-  assert.deepStrictEqual(signalsOf(treaty('attachments')), dated('2024-05-01'));
+  assert.deepStrictEqual(signalsOf(treaty('attachments'), 'fragment'), dated('2024-05-01'));
 });
 
 const WHOLE_TREATY = { version: VALID, versions: ['enacted', VALID], prospective: true };
 
-test('a whole treaty is found by its URI', () => {
-  assert.deepStrictEqual(signalsOf(treaty('')), WHOLE_TREATY);
+test('a whole treaty is its root', () => {
+  assert.deepStrictEqual(signalsOf(treaty(''), 'document'), WHOLE_TREATY);
 });
 
-test('a treaty\'s table of contents is found by its URI without /contents', () => {
-  assert.deepStrictEqual(signalsOf(treaty('contents')), WHOLE_TREATY);
+test('a treaty\'s table of contents is the whole treaty', () => {
+  assert.deepStrictEqual(signalsOf(treaty('contents'), requestScope('contents')), WHOLE_TREATY);
 });
 
 // The URI parser reads eut/euratom/section/1 as a whole document, with the
 // regnal year euratom/section.
 test('a treaty\'s provision is found by its URI, which the URI parser misreads', () => {
-  assert.deepStrictEqual(signalsOf(treaty('section/1')), datedWithProvisions('2024-02-01'));
+  assert.deepStrictEqual(signalsOf(treaty('section/1'), 'fragment'), datedWithProvisions('2024-02-01'));
 });
 
 // Nothing has the requested URI, so nothing is inspected: the body's
@@ -195,9 +197,40 @@ const NOT_FOUND = { version: '2024-07-01', versions: ['enacted', '2024-07-01'], 
 
 for (const path of ['annex/I', 'article/9']) {
   test(`${path} of a treaty, which isn't found, reads nothing`, () => {
-    assert.deepStrictEqual(signalsOf(treaty(path, links('enacted', '2024-07-01'))), NOT_FOUND);
+    assert.deepStrictEqual(signalsOf(treaty(path, links('enacted', '2024-07-01')), 'fragment'), NOT_FOUND);
   });
 }
+
+// A whole treaty is its root even when the root's URI differs from the
+// request, and the URI parser can read neither. Read as a fragment that wasn't
+// found, dct:valid would not be added beside the dated link, and the root's
+// Status would not be read.
+function treatyAtValid(rootAttributes: string): string {
+  return payload({
+    uri: 'eut/euratom',
+    valid: VALID,
+    links: links('enacted', '2024-07-01'),
+    documentUri: `eut/euratom/${VALID}`,
+    rootAttributes,
+    content: document('', 'eut/euratom'),
+  });
+}
+
+test('a whole treaty whose root\'s URI differs from the request gets the whole document\'s versions', () => {
+  assert.deepStrictEqual(signalsOf(treatyAtValid(''), 'document'), {
+    version: VALID,
+    versions: ['enacted', '2024-07-01', VALID],
+    prospective: true,
+  });
+});
+
+test('a whole treaty whose root\'s URI differs from the request reads the root\'s Status', () => {
+  assert.deepStrictEqual(signalsOf(treatyAtValid('Status="Prospective"'), 'document'), {
+    version: 'prospective',
+    versions: ['enacted', '2024-07-01', 'prospective'],
+    prospective: true,
+  });
+});
 
 // The URI parser reads eut/euratom/article/9/paragraph/2 as paragraph 2 of a
 // document eut/euratom/article/9, so the id would be paragraph-2.
@@ -208,7 +241,7 @@ test('an id read from a misread treaty identifier is not looked up', () => {
     <P1 id="paragraph-2" Status="Prospective"><Pnumber>2</Pnumber></P1>
   </P1group>
 </Body></EURetained>`);
-  assert.deepStrictEqual(signalsOf(xml), NOT_FOUND);
+  assert.deepStrictEqual(signalsOf(xml, 'fragment'), NOT_FOUND);
 });
 
 // --- An identifier with a regnal year ---
@@ -232,15 +265,15 @@ function regnal(path: string, rootPath: string): string {
 // Nothing in the document has a @DocumentURI, so these use the steps that
 // rely on the URI parser, which reads a regnal year.
 test('a provision of an Act with a regnal year is found by its id', () => {
-  assert.deepStrictEqual(signalsOf(regnal('section/2', 'ukpga/Geo5/4-5/12')), datedWithProvisions('2024-03-01'));
+  assert.deepStrictEqual(signalsOf(regnal('section/2', 'ukpga/Geo5/4-5/12'), 'fragment'), datedWithProvisions('2024-03-01'));
 });
 
 test('an Act with the same number in another regnal year is another document', () => {
-  assert.deepStrictEqual(signalsOf(regnal('section/2', 'ukpga/Geo5/5-6/12')), { version: VALID, versions: ['enacted', VALID], prospective: undefined });
+  assert.deepStrictEqual(signalsOf(regnal('section/2', 'ukpga/Geo5/5-6/12'), 'fragment'), { version: VALID, versions: ['enacted', VALID], prospective: undefined });
 });
 
-// The root's URI carries a version the request doesn't, so only the
-// identifiers' type, year and number show it is the same document.
+// A whole document is its root, even when the root's URI carries a version
+// the request doesn't.
 test('an Act with a regnal year is the whole document when its root\'s URI differs from the request', () => {
-  assert.deepStrictEqual(signalsOf(regnal('', `ukpga/Geo5/4-5/12/${VALID}`)), { version: VALID, versions: ['enacted', VALID], prospective: true });
+  assert.deepStrictEqual(signalsOf(regnal('', `ukpga/Geo5/4-5/12/${VALID}`), 'document'), { version: VALID, versions: ['enacted', VALID], prospective: true });
 });

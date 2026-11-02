@@ -8,7 +8,7 @@
 
 import { LegislationClient } from "../api/legislation-client.js";
 import { EffectsParser } from "../parsers/effects-parser.js";
-import { MetadataParser, UnappliedEffect } from "../parsers/metadata-parser.js";
+import { MetadataParser, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
 import { filterEffectsForFragment } from "./get-legislation-metadata.js";
 
 /**
@@ -25,7 +25,7 @@ export async function getUpToDateCallout(
   if (version) return undefined;
 
   const parser = new MetadataParser();
-  const metadata = parser.parse(xml);
+  const metadata = parser.parse(xml, requestScope(fragment));
 
   let effects = metadata.unappliedEffects;
 

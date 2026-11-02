@@ -13,7 +13,7 @@
 
 The MCP followed the earlier rules. It also found the element a response is about by `@id` alone. So it found nothing for `/body`, `/introduction`, `/signature`, `/note`, `/schedules` or `/annexes`, and treated a treaty's `/attachments` as the whole document.
 
-This ADR keeps four things apart: what follows the API, what the MCP adds beyond it, the MCP's own contract, and a question left open. Known limitations come last.
+This ADR keeps four things apart: what follows the API, where the MCP goes beyond it, the MCP's own contract, and a question left open. Known limitations come last.
 
 ## Decision
 
@@ -24,20 +24,22 @@ This ADR keeps four things apart: what follows the API, what the MCP adds beyond
 | Dates from a fragment's content | ADR 2026-10-19; the `start-date` and `content-date` templates in `simplify/metadata.xsl` | `src/parsers/fragment-dates.ts` |
 | A version that can't be dated | ADR 2026-09-04; the `prospective` template | `isUndateableVersion` in `src/parsers/metadata-parser.ts` |
 | The `prospective` field | ADR 2026-09-04 | `hasProspectiveProvisions` |
-| Finding the requested element | `$target` in `simplify/metadata.xsl` | `findTarget`, steps 1 and 2 |
+| Finding the requested element | `$target` in `simplify/metadata.xsl` | `findFragment`, steps 1 and 2 |
 
 - **Dates from a fragment's content.** For a fragment that isn't final, and whose version can be dated, up to two dates read from its content are added to `versions`. One is the date the returned version started, no later than `dct:valid` when there is one. The other, only when there is a `dct:valid`, is a later version's date after it. `version` is still chosen from `versions` against `dct:valid`, so a date from the links can be chosen over the content's.
 - **A version that can't be dated.** A revised version is labelled `"prospective"` when the requested element is itself marked prospective with no start date. That means the token `Prospective` in `@Status` and no `@RestrictStartDate`. For a `P1`, its `P1group` counts too. A marking inside the element doesn't count.
 - **The `prospective` field.** It is `true` when the version can't be dated, or when anything inside the requested element is marked in the same way, whatever its `@Match`. It is never `false`, and it is left out on final text.
-- **Finding the requested element.** First by `@DocumentURI`: the element whose URI is `dc:identifier` with any `/contents` removed, keeping its version and language. An `InternalLink`'s URI names its destination, so it never matches. Failing that, the `Schedules` container for `/schedules` or `/annexes`, and the first `Attachments` container for `/attachments`.
+- **Finding the requested element.** For a fragment, first by `@DocumentURI`: the element whose URI is `dc:identifier` with any `/contents` removed, keeping its version and language. An `InternalLink`'s URI names its destination, so it never matches. Failing that, the `Schedules` container for `/schedules` or `/annexes`, and the first `Attachments` container for `/attachments`.
 
-### 2. Beyond the API: two fallbacks
+### 2. Beyond the API
 
-When those steps find nothing, the MCP falls back on what `parseLegislationUri` reads from the identifier. It takes the root for a whole document or its table of contents. Otherwise it takes the element whose `@id` matches the fragment path, outside alternative versions (`Versions`). The `@id` fallback finds `ukpga/1990/43/section/34`, whose only `@DocumentURI`s carry an extent. The API can't find it (API issue #50).
+**The request's scope.** Each tool passes the parser whether it requested a whole document or a fragment, as the API's endpoint does. A request for the `contents` fragment is the whole document's. A whole document's element is its root, even when the root's `@DocumentURI` differs from `dc:identifier`. The API looks the root up by its URI, so it would find nothing then. The response alone can't say reliably which was requested. Deciding from the lookup, for example, would read a whole treaty whose root's URI differs from its identifier as a fragment that wasn't found.
 
-Both fallbacks need the identifier and the root's `@DocumentURI` to parse as the same document: the same type, year and number. The parser misreads treaty identifiers. It reads `eut/euratom/article/9` as a whole document with the regnal year `euratom/article`. Without the check, such a request would fall back to the whole treaty.
+**The `@id` fallback.** When the steps in §1 find no element for a fragment, the MCP takes the element whose `@id` matches the fragment path, outside alternative versions (`Versions`). It reads the path with `parseLegislationUri`. This finds `ukpga/1990/43/section/34`, whose only `@DocumentURI`s carry an extent. The API can't find it (API issue #50).
 
-A response counts as a fragment unless its target is the root. When no target is found, nothing is inspected: no content dates are read, and `prospective` is left out.
+The fallback needs the identifier and the root's `@DocumentURI` to parse as the same document: the same type, year and number. The parser misreads treaty identifiers. It reads `eut/euratom/article/9/paragraph/2` as paragraph 2 of a document `eut/euratom/article/9`. Without the check, such a request would take any element with the id `paragraph-2`.
+
+When no element is found for a fragment, nothing is inspected: no content dates are read, and `prospective` is left out.
 
 ### 3. The MCP's own contract
 
@@ -77,3 +79,4 @@ Constructed payloads, following the API's tests where they exist:
 - `src/test/parsers/fragment-dates.test.ts`: content dates
 - `src/test/parsers/prospective.test.ts`: the undateable version and the field
 - `src/test/parsers/fragment-target.test.ts`: finding the requested element, including the treaty and regnal-year cases
+- `src/test/tools/get-legislation-metadata.test.ts` and `src/test/parsers/toc-parser.test.ts`: the scope each caller passes

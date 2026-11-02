@@ -5,7 +5,7 @@
  */
 
 import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
-import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect } from "../parsers/metadata-parser.js";
+import { LegislationMetadata, MetadataParser, ProvisionRef, UnappliedEffect, requestScope } from "../parsers/metadata-parser.js";
 import { contains } from "../utils/section-range-containment.js";
 import { fetchAllEffects } from "./up-to-date-callout.js";
 
@@ -90,7 +90,7 @@ export async function execute(
 
   // Parse to structured JSON
   const parser = new MetadataParser();
-  const metadata = parser.parse(result.content);
+  const metadata = parser.parse(result.content, requestScope(fragment));
 
   if (version) {
     // Effects and upToDate describe outstanding work on the *current* view; they

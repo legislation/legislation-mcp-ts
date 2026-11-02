@@ -6,6 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { requestScope } from '../../parsers/metadata-parser.js';
 import { payload, versionsOf } from '../helpers/metadata-payload.js';
 
 const VALID = '2024-11-01';
@@ -49,7 +50,7 @@ test('a fragment requested at its own version date reports that version, which i
     links: links('2024-09-01', '2024-12-01'),
     content: section('RestrictStartDate="2024-10-01"', ''),
   });
-  assert.deepStrictEqual(versionsOf(xml), {
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), {
     version: '2024-10-01',
     versions: ['2024-09-01', '2024-10-01', '2024-12-01'],
   });
@@ -57,21 +58,21 @@ test('a fragment requested at its own version date reports that version, which i
 
 test('a fragment reports a version made by a change inside it', () => {
   const xml = sectionPayload(links('2024-09-01'), section('RestrictStartDate="2024-09-01"', 'RestrictStartDate="2024-10-01"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 test('a date read from the content stops dct:valid being added', () => {
   // With only "current" in the links, dct:valid used to be recovered as the
   // fragment's label. The content date is a dated label, so it no longer is.
   const xml = sectionPayload(links(), section('RestrictStartDate="2024-10-01"', ''));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-10-01'] });
 });
 
 test('a listed version later than the start date is kept as the version', () => {
   // As a version made only by removing text or adding an annotation would
   // leave. The version is selected from the list, not taken from the start date.
   const xml = sectionPayload(links('enacted', '2024-06-01', '2024-09-01'), section('RestrictStartDate="2024-06-01"', ''));
-  assert.deepStrictEqual(versionsOf(xml), {
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), {
     version: '2024-09-01',
     versions: ['enacted', '2024-06-01', '2024-09-01'],
   });
@@ -88,7 +89,7 @@ test('a sub-provision is read as its provision', () => {
     links: links('2024-09-01'),
     content: section('RestrictStartDate="2024-10-01"', 'RestrictStartDate="2024-09-15"'),
   });
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 test('a P1 is read with every P1 in its P1group', () => {
@@ -99,7 +100,7 @@ test('a P1 is read with every P1 in its P1group', () => {
     <P1 id="section-3" RestrictStartDate="2024-10-01"><Pnumber>3</Pnumber></P1>
   </P1group>
 </Body></Primary>`);
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 // --- Alternative versions ---
@@ -122,31 +123,31 @@ const MAIN_TEXT = `
 
 test('an alternative version\'s date counts towards the section\'s', () => {
   const xml = sectionPayload(links('2024-10-01'), MAIN_TEXT + ALTERNATIVE_VERSION.replace('DATE', '2024-11-01'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-11-01', versions: ['2024-10-01', '2024-11-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-11-01', versions: ['2024-10-01', '2024-11-01'] });
 });
 
 test('an alternative version carrying the same id is not the target', () => {
   // Versions is placed first, so a search that looked inside it would find
   // the Scotland version's P1, whose only date is 2024-09-15.
   const xml = sectionPayload(links('2024-09-01'), ALTERNATIVE_VERSION.replace('DATE', '2024-09-15') + MAIN_TEXT);
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 // --- Match="false" ---
 
 test('an element marked Match="false" does not count, but the elements inside it do', () => {
   const xml = sectionPayload(links('2024-09-01'), section('Match="false" RestrictStartDate="2024-10-15"', 'RestrictStartDate="2024-10-01"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 test('a date marked Match="false" does not count, even on or before dct:valid', () => {
   const xml = sectionPayload(links('2024-09-01'), section('RestrictStartDate="2024-10-01"', 'Match="false" RestrictStartDate="2024-10-20"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 test('with nothing else dated, the section\'s own date counts even when marked Match="false"', () => {
   const xml = sectionPayload(links('2024-09-01'), section('Match="false" RestrictStartDate="2024-10-01"', ''));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 // --- Tables ---
@@ -171,13 +172,13 @@ function table(p1Attributes: string): string {
 }
 
 test('a table takes the date of its nearest dated ancestor, not its own', () => {
-  assert.deepStrictEqual(versionsOf(table('')), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(table(''), 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 for (const value of ['', 'not a date']) {
   test(`a table whose nearest dated ancestor's date is ${JSON.stringify(value)} gets no date`, () => {
     // The P1 carries the attribute, so the P1group further up is not used.
-    assert.deepStrictEqual(versionsOf(table(`RestrictStartDate="${value}"`)), {
+    assert.deepStrictEqual(versionsOf(table(`RestrictStartDate="${value}"`), 'fragment'), {
       version: '2024-09-01',
       versions: ['2024-09-01'],
     });
@@ -185,7 +186,7 @@ for (const value of ['', 'not a date']) {
 }
 
 test('a table whose nearest dated ancestor starts after dct:valid gets only a later date', () => {
-  assert.deepStrictEqual(versionsOf(table('RestrictStartDate="2024-12-01"')), {
+  assert.deepStrictEqual(versionsOf(table('RestrictStartDate="2024-12-01"'), 'fragment'), {
     version: '2024-09-01',
     versions: ['2024-09-01', '2024-12-01'],
   });
@@ -195,7 +196,7 @@ test('a table whose nearest dated ancestor starts after dct:valid gets only a la
 
 test('a date after dct:valid is a later version, and an earlier one is the start', () => {
   const xml = sectionPayload(links('2024-09-01'), section('RestrictStartDate="2024-12-01"', 'RestrictStartDate="2024-10-01"'));
-  assert.deepStrictEqual(versionsOf(xml), {
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), {
     version: '2024-10-01',
     versions: ['2024-09-01', '2024-10-01', '2024-12-01'],
   });
@@ -203,7 +204,7 @@ test('a date after dct:valid is a later version, and an earlier one is the start
 
 test('a later version named by the links is kept, and the same date read from the content adds nothing', () => {
   const xml = sectionPayload(links('2024-09-01', '2024-12-01'), section('RestrictStartDate="2024-10-01"', 'RestrictStartDate="2024-12-01"'));
-  assert.deepStrictEqual(versionsOf(xml), {
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), {
     version: '2024-10-01',
     versions: ['2024-09-01', '2024-10-01', '2024-12-01'],
   });
@@ -211,7 +212,7 @@ test('a later version named by the links is kept, and the same date read from th
 
 test('with every date after dct:valid, there is no start date but there is a later version', () => {
   const xml = sectionPayload(links('2024-09-01'), section('Match="false" RestrictStartDate="2024-12-01"', 'RestrictStartDate="2024-12-15"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-09-01', versions: ['2024-09-01', '2024-12-15'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-09-01', versions: ['2024-09-01', '2024-12-15'] });
 });
 
 // Without dct:valid, as in a prospective version, there is no limit, and the
@@ -222,7 +223,7 @@ test('without dct:valid there is no limit', () => {
     links: links('2024-09-01'),
     content: section('RestrictStartDate="2024-12-01"', 'RestrictStartDate="2024-12-15"'),
   });
-  assert.deepStrictEqual(versionsOf(xml), { version: 'enacted', versions: ['2024-09-01', '2024-12-15'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: 'enacted', versions: ['2024-09-01', '2024-12-15'] });
 });
 
 test('a prospective section without dct:valid stays prospective, and its content date is not added', () => {
@@ -231,7 +232,7 @@ test('a prospective section without dct:valid stays prospective, and its content
     links: links('2024-09-01'),
     content: section('Status="Prospective"', 'RestrictStartDate="2024-12-15"'),
   });
-  assert.deepStrictEqual(versionsOf(xml), { version: 'prospective', versions: ['2024-09-01', 'prospective'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: 'prospective', versions: ['2024-09-01', 'prospective'] });
 });
 
 // --- Reading dates ---
@@ -239,26 +240,26 @@ test('a prospective section without dct:valid stays prospective, and its content
 for (const date of ['2024-10-01Z', '2024-10-01+01:00', '2024-10-01-05:00']) {
   test(`a start date with a timezone keeps its calendar date (${date})`, () => {
     const xml = sectionPayload(links('2024-09-01'), section(`RestrictStartDate="${date}"`, ''));
-    assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+    assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
   });
 }
 
 for (const date of ['2024-12-01Z', '2024-12-01+01:00', '2024-12-01-05:00']) {
   test(`a later date with a timezone keeps its calendar date (${date})`, () => {
     const xml = sectionPayload(links('2024-09-01'), section(`RestrictStartDate="${date}"`, ''));
-    assert.deepStrictEqual(versionsOf(xml), { version: '2024-09-01', versions: ['2024-09-01', '2024-12-01'] });
+    assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-09-01', versions: ['2024-09-01', '2024-12-01'] });
   });
 }
 
 test('dates in different timezones are compared as calendar dates', () => {
   // As instants, 2024-10-01-12:00 begins after 2024-10-02+14:00.
   const xml = sectionPayload(links('2024-09-01'), section('RestrictStartDate="2024-10-01-12:00"', 'RestrictStartDate="2024-10-02+14:00"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-02', versions: ['2024-09-01', '2024-10-02'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-02', versions: ['2024-09-01', '2024-10-02'] });
 });
 
 test('a value that is not a calendar date is ignored', () => {
   const xml = sectionPayload(links('2024-09-01'), section('RestrictStartDate="2024-10-01"', 'RestrictStartDate="2024-10-32"'));
-  assert.deepStrictEqual(versionsOf(xml), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: '2024-10-01', versions: ['2024-09-01', '2024-10-01'] });
 });
 
 // --- Responses that are not fragments, and final text ---
@@ -270,7 +271,7 @@ test('a whole document gets no date from its content', () => {
     links: links('2024-09-01'),
     content: section('RestrictStartDate="2024-10-01"', ''),
   });
-  assert.deepStrictEqual(versionsOf(xml), { version: VALID, versions: ['2024-09-01', VALID] });
+  assert.deepStrictEqual(versionsOf(xml, 'document'), { version: VALID, versions: ['2024-09-01', VALID] });
 });
 
 test('final text gets no date from its content', () => {
@@ -280,12 +281,13 @@ test('final text gets no date from its content', () => {
     links: links('2024-09-01'),
     content: section('RestrictStartDate="2024-10-01"', ''),
   });
-  assert.deepStrictEqual(versionsOf(xml), { version: 'enacted', versions: ['enacted', '2024-09-01'] });
+  assert.deepStrictEqual(versionsOf(xml, 'fragment'), { version: 'enacted', versions: ['enacted', '2024-09-01'] });
 });
 
-// A table of contents is read as the whole document, whatever the form of its
-// identifier. Read as a fragment, dct:valid would not be added beside the
-// dated link, and the root's Status would not be read.
+// A table of contents is the whole document's, so a request for `contents` has
+// the document scope, whatever the form of its identifier. Read as a fragment,
+// dct:valid would not be added beside the dated link, and the root's Status
+// would not be read.
 const CONTENTS_FORMS = [
   { identifier: 'contents', documentUri: 'ukpga/2024/1' },
   { identifier: `contents/${VALID}`, documentUri: `ukpga/2024/1/${VALID}` },
@@ -297,11 +299,11 @@ for (const form of CONTENTS_FORMS) {
 
   test(`a table of contents (${form.identifier}) gets the whole document's versions`, () => {
     const xml = payload({ ...form, valid: VALID, links: links('2024-09-01'), content: contents });
-    assert.deepStrictEqual(versionsOf(xml), { version: VALID, versions: ['2024-09-01', VALID] });
+    assert.deepStrictEqual(versionsOf(xml, requestScope('contents')), { version: VALID, versions: ['2024-09-01', VALID] });
   });
 
   test(`a table of contents (${form.identifier}) reads the root element's Status`, () => {
     const xml = payload({ ...form, valid: VALID, links: links('2024-09-01'), content: contents, rootAttributes: 'Status="Prospective"' });
-    assert.deepStrictEqual(versionsOf(xml), { version: 'prospective', versions: ['2024-09-01', 'prospective'] });
+    assert.deepStrictEqual(versionsOf(xml, requestScope('contents')), { version: 'prospective', versions: ['2024-09-01', 'prospective'] });
   });
 }

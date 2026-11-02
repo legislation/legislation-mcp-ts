@@ -3,7 +3,7 @@
  * and a reader for the fields that decide a response's version.
  */
 
-import { MetadataParser } from '../../parsers/metadata-parser.js';
+import { MetadataParser, RequestScope } from '../../parsers/metadata-parser.js';
 
 /**
  * A payload for ukpga/2024/1. `identifier` is the part of the request after
@@ -45,14 +45,14 @@ export function payload(options: {
 </Legislation>`;
 }
 
-/** The parsed `version` and `versions`. */
-export function versionsOf(xml: string) {
-  const { version, versions } = new MetadataParser().parse(xml);
+/** The parsed `version` and `versions`, for a request with this scope. */
+export function versionsOf(xml: string, scope: RequestScope) {
+  const { version, versions } = new MetadataParser().parse(xml, scope);
   return { version, versions };
 }
 
 /** The parsed `version`, `versions` and `prospective`, with `prospective` present even when undefined. */
-export function signalsOf(xml: string) {
-  const { version, versions, prospective } = new MetadataParser().parse(xml);
+export function signalsOf(xml: string, scope: RequestScope) {
+  const { version, versions, prospective } = new MetadataParser().parse(xml, scope);
   return { version, versions, prospective };
 }

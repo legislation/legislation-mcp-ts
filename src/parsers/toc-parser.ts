@@ -84,7 +84,7 @@ export class TocParser {
   parse(xml: string): TableOfContents {
     // Parse metadata using existing parser (without preserveOrder)
     const metadataParser = new MetadataParser();
-    const meta = metadataParser.parse(xml);
+    const meta = metadataParser.parse(xml, 'document');
     const nav = metadataParser.parseNavigationLinks(xml);
 
     // Parse the full document with preserveOrder to maintain element ordering

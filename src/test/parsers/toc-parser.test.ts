@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { TocParser } from '../../parsers/toc-parser.js';
+import { payload } from '../helpers/metadata-payload.js';
 
 /**
  * Helper: wrap Contents XML in a minimal valid Legislation document.
@@ -355,4 +356,20 @@ test('TocParser populates meta field correctly', () => {
   assert.strictEqual(result.meta.year, 2024);
   assert.strictEqual(result.meta.number, 1);
   assert.strictEqual(result.meta.title, 'Test Act 2024');
+});
+
+// A table of contents is the whole document's. Read as a fragment, the date on
+// its entry would be added and dct:valid would not.
+test('TocParser reads its metadata as the whole document\'s', () => {
+  const links = ['enacted', 'current']
+    .map(title => `<atom:link rel="http://purl.org/dc/terms/hasVersion" href="http://www.legislation.gov.uk/ukpga/2024/1/${title}" title="${title}"/>`)
+    .join('\n');
+  const xml = payload({
+    identifier: 'contents',
+    valid: '2024-11-01',
+    links,
+    content: '<Contents><ContentsItem ContentRef="section-2" RestrictStartDate="2024-10-01"/></Contents>',
+  });
+  const { meta } = new TocParser().parse(xml);
+  assert.deepStrictEqual({ version: meta.version, versions: meta.versions }, { version: '2024-11-01', versions: ['enacted', '2024-11-01'] });
 });
