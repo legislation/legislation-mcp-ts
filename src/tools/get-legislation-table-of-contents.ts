@@ -6,6 +6,7 @@
 
 import { LegislationClient, LegislationLanguage, LegislationResponse } from "../api/legislation-client.js";
 import { TocParser } from "../parsers/toc-parser.js";
+import { setCurrentEffects } from "./up-to-date-callout.js";
 
 export const name = "get_legislation_table_of_contents";
 
@@ -87,6 +88,8 @@ export async function execute(
       if (version) {
         toc.meta.unappliedEffects = undefined;
         toc.meta.upToDate = undefined;
+      } else {
+        await setCurrentEffects(toc.meta, client);
       }
       content = JSON.stringify(toc, null, 2);
     } else {

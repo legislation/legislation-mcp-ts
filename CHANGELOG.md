@@ -11,6 +11,10 @@ it or run it, newest first.
   could make `upToDate` false. For enacted or made text, a request for the
   `contents` fragment now covers the whole document, as it does for revised
   text.
+- In `get_legislation_table_of_contents`, for enacted or made text,
+  `meta.unappliedEffects` and `meta.upToDate` now come from the effects
+  recorded against the legislation. Before, `upToDate` was always true. Both
+  are left out if the effects can't be fetched.
 
 ## 2026-11-02
 
