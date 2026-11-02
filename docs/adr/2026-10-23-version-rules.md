@@ -69,9 +69,9 @@ This is left unchanged here. What `upToDate` should mean for the MCP's callers i
 
 These are not decisions.
 
-- **Treaty identifiers.** `parseLegislationUri` can't read them. The lookup's first two steps don't rely on it, so a treaty's attachments and provisions with a matching URI are found. Fields read from the identifier, such as `pointInTime`, can still be missing or wrong for treaties.
-- **Several elements with the requested URI.** The MCP takes the first it meets. The API's lookup would fail. No payload checked has had one.
-- **No target found.** Then `prospective`'s absence means nothing was checked. `json://metadata-response` says that a non-final fragment's text was checked. That holds when the element is found, as it was in every real payload tried: sections, subsections, articles, schedules, chapters, crossheadings, the body, introduction, signature and note, schedules, annexes and attachments.
+- **Treaty identifiers.** `parseLegislationUri` can't read them. The lookup's first two steps don't rely on it, so a treaty's attachments and provisions with a matching URI are found. Fields read from the identifier, such as `pointInTime`, can still be missing for treaties.
+- **Several elements with the requested URI.** The MCP takes the first match in a depth-first walk of the parsed tree. The tree groups siblings that share a name, so this need not be the first in the document. The API's lookup fails with a type error. No payload checked has had one.
+- **No target found.** Then `prospective`'s absence means nothing was checked. `json://metadata-response` says that a non-final fragment's text was checked. That holds when the element is found, as it was in every real payload tried that had one: sections, subsections, articles, schedules, chapters, crossheadings, the body, introduction, signature and note, schedules, annexes and attachments. The note and signature of `wsi/2024/1` exist only as PDF, so there is nothing to find; that text is final, so nothing is lost.
 - **Numeric character references.** The table-of-contents, Atom and effects parsers don't decode them (`&#9;`). The metadata parser does (`htmlEntities`), so the `meta` of a table of contents is not affected.
 
 ## Tests

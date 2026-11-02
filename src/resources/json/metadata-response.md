@@ -99,7 +99,7 @@ All date fields use **ISO 8601 date format** (YYYY-MM-DD).
       - `dct:valid` is added when the links included `"current"` and, for a fragment, no other date is listed
   - It is not a complete history, and a listed date doesn't prove that a fragment changed on it. Requests for the same fragment at different dates can list different dates
   - Usually usable as the `version` parameter in subsequent requests
-  - Exception: `"prospective"` is not accepted as a `version` parameter by any tool
+  - Exception: `"prospective"` is not a supported `version` value
   - When `"prospective"` is present, it is the last and most recent version in the list
   - Fetch that version by omitting the `version` parameter altogether (use the versionless URL)
   - Sorted: first-version keyword (`enacted`/`made`/`created`/`adopted`), then dates chronologically, then `"prospective"`
@@ -213,7 +213,7 @@ get_legislation_metadata(type="ukpga", year="2010", number="15", fragment="part/
 - a first-version keyword (`enacted`, `made`, `created`, `adopted`) requests the original text
 - an ISO date (`YYYY-MM-DD`) requests the text as it stood on that date. A date before the first version returns an error
 
-`prospective` is not accepted. When `versions` ends with `"prospective"`, leave `version` out: a request without one returns the latest version, whichever it is.
+`prospective` is not a supported value. When `versions` ends with `"prospective"`, leave `version` out: a request without one returns the latest version, whichever it is.
 
 Any version can have amendments that are in force but not yet applied to its text. `upToDate` and `unappliedEffects` report them on a request without a `version`, and are left out on a request with one.
 
