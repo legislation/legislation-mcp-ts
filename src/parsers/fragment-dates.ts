@@ -36,7 +36,7 @@
  * the legacy timeline lists it.
  */
 
-import { TreeElement, attribute, childElements, descendantsOrSelf, hasAttribute } from './xml-tree.js';
+import { TreeElement, attribute, childElements, descendantsOrSelf, hasAttribute, tokens } from './xml-tree.js';
 
 export interface FragmentDates {
   /** The date the returned version started. Absent if no date is left once the limit applies. */
@@ -102,7 +102,7 @@ function lastIndexOfTag(path: TreeElement[], tag: string, from: number): number 
  * Versions/Version element).
  */
 function alternatives(section: TreeElement, root: TreeElement): TreeElement[] {
-  const refs = new Set((attribute(section, 'AltVersionRefs') ?? '').split(/\s+/).filter(Boolean));
+  const refs = new Set(tokens(attribute(section, 'AltVersionRefs')));
   if (refs.size === 0) return [];
   const result: TreeElement[] = [];
   for (const element of descendantsOrSelf(root)) {

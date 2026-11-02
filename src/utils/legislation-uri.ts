@@ -37,6 +37,27 @@ const CALENDAR_YEAR_RE = /^\d{4}$/;
 
 const NUMBER_RE = /^\d+$/;
 
+function isLanguage(segment: string | undefined): boolean {
+  return segment !== undefined && LANGUAGES.includes(segment);
+}
+
+function isVersion(segment: string | undefined): boolean {
+  return segment !== undefined
+    && (ISO_DATE_RE.test(segment) || FIRST_VERSION_KEYWORDS.has(segment) || OTHER_VERSION_KEYWORDS.includes(segment));
+}
+
+/**
+ * The URI or path without a final language segment, then without a final
+ * version segment, as parseLegislationUri removes them. It works on any URI,
+ * including those parseLegislationUri can't read, such as a treaty's.
+ */
+export function withoutVersionAndLanguage(uri: string): string {
+  const segments = uri.split("/");
+  if (isLanguage(segments[segments.length - 1])) segments.pop();
+  if (isVersion(segments[segments.length - 1])) segments.pop();
+  return segments.join("/");
+}
+
 /**
  * Parse a legislation.gov.uk URI or path into its components.
  *
@@ -84,17 +105,14 @@ export function parseLegislationUri(uri: string): ParsedLegislationUri | null {
 
   // Pop language from end
   let language: string | undefined;
-  if (remaining.length > 0 && LANGUAGES.includes(remaining[remaining.length - 1])) {
+  if (isLanguage(remaining[remaining.length - 1])) {
     language = remaining.pop()!;
   }
 
   // Pop version from end
   let version: string | undefined;
-  if (remaining.length > 0) {
-    const last = remaining[remaining.length - 1];
-    if (ISO_DATE_RE.test(last) || FIRST_VERSION_KEYWORDS.has(last) || OTHER_VERSION_KEYWORDS.includes(last)) {
-      version = remaining.pop()!;
-    }
+  if (isVersion(remaining[remaining.length - 1])) {
+    version = remaining.pop()!;
   }
 
   // Whatever's left is the fragment

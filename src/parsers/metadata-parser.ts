@@ -6,7 +6,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri } from '../utils/legislation-uri.js';
+import { ISO_DATE_RE, ParsedLegislationUri, parseLegislationUri, withoutVersionAndLanguage } from '../utils/legislation-uri.js';
 import { longToShortTypeMap, getFirstVersion } from '../utils/type-codes.js';
 import { compareVersions } from '../utils/version-sort.js';
 import { readFragmentDates } from './fragment-dates.js';
@@ -203,7 +203,7 @@ export class MetadataParser {
 
     const versions = this.extractVersions(
       legislation, shortType, status, undateableVersion, responseLanguage,
-      isFragment, contentDates
+      isFragment, contentDates, valid
     );
 
     const version = MetadataParser.computeVersion(versions, valid, undateableVersion, status, shortType);
@@ -361,7 +361,8 @@ export class MetadataParser {
     undateableVersion: boolean,
     responseLanguage: 'en' | 'cy' | undefined,
     isFragment: boolean,
-    contentDates: string[]
+    contentDates: string[],
+    valid: string | undefined
   ): string[] {
     const metadata = legislation?.Metadata;
     const labels = new Set<string>();
@@ -404,7 +405,6 @@ export class MetadataParser {
       labels.add('prospective');
     } else if (!isFinal) {
       for (const date of contentDates) labels.add(date);
-      const valid = this.extractValid(metadata);
       if (valid && MetadataParser.shouldRecoverValidDate(sawCurrent, labels, isFragment)) {
         labels.add(valid);
       }
@@ -522,8 +522,7 @@ export class MetadataParser {
    * language ends `/schedules`, `/annexes` or `/attachments`.
    */
   private static findContainer(root: TreeElement, lookupId: string): TreeElement[] | undefined {
-    const uri = lookupId.replace(/\/(english|welsh)$/, '')
-      .replace(/\/(enacted|made|created|adopted|current|prospective|\d{4}-\d{2}-\d{2})$/, '');
+    const uri = withoutVersionAndLanguage(lookupId);
     const tag = /\/(annexes|schedules)$/.test(uri) ? 'Schedules'
       : /\/attachments$/.test(uri) ? 'Attachments'
       : undefined;
