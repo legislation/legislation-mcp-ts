@@ -3,7 +3,7 @@
 Changes to the legislation.gov.uk MCP server that affect people who connect to
 it or run it, newest first.
 
-## Unreleased
+## 2026-11-02
 
 - `prospective` in `get_legislation_metadata`, and in the `meta` of
   `get_legislation_table_of_contents`, now means the response contains
